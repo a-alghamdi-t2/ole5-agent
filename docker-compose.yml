@@ -1,0 +1,124 @@
+name: ole5-agent
+
+# Logs kept per container: 5 files of 20 MB each, then the oldest is dropped.
+# Docker's default keeps everything, which fills the disk over months.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
+services:
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: ole5
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ole5
+    volumes:
+      # Postgres 18+ wants the mount one level up: it stores data in a
+      # major-version subdirectory under here, so pg_upgrade can work across
+      # versions without crossing a mount boundary.
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ole5 -d ole5"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    # Published on this machine only, for pgAdmin, psql and the scripts run
+    # from here. The app does not need it -- it reaches the database by
+    # service name -- and nothing else on the network should.
+    ports:
+      - "127.0.0.1:5432:5432"
+    logging: *logging
+    restart: unless-stopped
+
+  qdrant:
+    # Pinned to the version already holding the data, not :latest, so a pull
+    # cannot silently upgrade the store underneath the indexed vectors.
+    image: qdrant/qdrant:v1.19.0
+    volumes:
+      # The volume RAGent2's own compose project created. Declared external
+      # below so compose attaches the existing data rather than provisioning
+      # an empty one under this project's name.
+      - deploy_qdrant_storage:/qdrant/storage
+    # This machine only: Qdrant has no password, so published on every
+    # interface anyone on the network could read or delete the indexes.
+    ports:
+      - "127.0.0.1:6333:6333"  # HTTP API + dashboard
+      - "127.0.0.1:6334:6334"  # gRPC API
+    logging: *logging
+    restart: unless-stopped
+
+  docling:
+    # Built from RAGent2's Dockerfile, copied into this repo: the stock
+    # docling-serve image plus the tesseract Arabic language pack, which the
+    # knowledge base depends on. Theirs lives in a cache directory that an
+    # upgrade or cleanup would take with it.
+    build: ./docker/docling
+    image: docling-serve-ara:latest
+    # This machine only: no password, and a document converter open to the
+    # network is someone else's free OCR service.
+    ports:
+      - "127.0.0.1:8092:5001"
+    environment:
+      DOCLING_SERVE_ENABLE_REMOTE_SERVICES: "1"
+      # One worker = one conversion at a time. Concurrent OCR exhausted memory
+      # and made large PDFs 503/OOM, and single-worker is also required for
+      # async task tracking with the in-memory orchestrator. RAGent2's setting.
+      DOCLING_SERVE_ENG_LOC_NUM_WORKERS: "1"
+      # Hard cap so a runaway document fails cleanly instead of hanging.
+      DOCLING_SERVE_MAX_DOCUMENT_TIMEOUT: "1800"
+      # Backstop matching ragent2's own upload limits -- keep the two in sync.
+      DOCLING_SERVE_MAX_FILE_SIZE: ${DOCLING_SERVE_MAX_FILE_SIZE:-104857600}
+      DOCLING_SERVE_MAX_NUM_PAGES: ${DOCLING_SERVE_MAX_NUM_PAGES:-100}
+    logging: *logging
+    restart: unless-stopped
+
+  ole5:
+    build:
+      context: .
+      args:
+        PIP_EXTRA_INDEX_URL: ${PIP_EXTRA_INDEX_URL:-}
+    env_file: .env
+    environment:
+      # The database, by service name on the compose network.
+      DATABASE_URL: postgresql://ole5:${POSTGRES_PASSWORD}@db:5432/ole5
+      # Service names on the compose network. Docling's container port is 5001;
+      # 8092 is only where it is published on the host.
+      QDRANT_URL: http://qdrant:6333
+      DOCLING_URL: http://docling:5001
+      # REPO_ROOT in config.py assumes a src/ layout that does not exist once
+      # installed as a package, so its path defaults land in the wrong place
+      # inside the container. Pinned explicitly rather than relying on it.
+      MIGRATIONS_DIR: /app/migrations
+      UPLOAD_DIR: /app/data/uploads
+      PROMPTS_DIR: /app/prompts
+    depends_on:
+      db:
+        # Waits for pg_isready, not just for the container to start. Without
+        # this the app races the database on a cold boot and migrations fail.
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      docling:
+        condition: service_started
+    # The console: open to the network, since reviewers reach it from their
+    # own machines. Plain HTTP -- fine inside the office network; anything
+    # reachable from outside needs HTTPS in front of it first.
+    ports:
+      - "8420:8420"
+    volumes:
+      # Uploaded documents outlive the container; the row in `documents` points
+      # at a file, and losing the file loses the ability to re-index it.
+      - ./data:/app/data
+    logging: *logging
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  deploy_qdrant_storage:
+    # Created by RAGent2's `ragent2 up` under its own compose project, so the
+    # name carries that project's prefix. External so the indexed vectors
+    # survive this move.
+    external: true

@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Support Agent console</title>
+  <script>
+    // The theme is set before the page paints, so a light-theme user never
+    // sees a flash of dark first. Remembered per browser.
+    try {
+      if (localStorage.getItem("ole5-theme") === "light") {
+        document.documentElement.dataset.theme = "light";
+      }
+    } catch (e) {}
+  </script>
+  <link rel="icon" href="/favicon.ico">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter+Tight:wght@400;500;600;650&family=IBM+Plex+Sans+Arabic:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+
+<!-- ====================================================== sign in -->
+<div class="gate" id="gate" hidden>
+  <form class="gate-card" id="gate-form">
+    <!-- One logo per theme: white on the dark ground, black on the light. -->
+    <img class="gate-logo logo-on-dark" src="/static/logo-white.png" alt="">
+    <img class="gate-logo logo-on-light" src="/static/logo-black.png" alt="">
+    <h1>Support Agent</h1>
+    <p class="gate-sub" id="gate-sub">Sign in to review drafts.</p>
+
+    <label>Email<input type="email" id="gate-email" required autocomplete="username"></label>
+    <label>Password<input type="password" id="gate-password" required autocomplete="current-password"></label>
+    <label id="gate-name-row" hidden>Name<input type="text" id="gate-name" autocomplete="name" dir="auto"></label>
+
+    <div class="gate-error" id="gate-error" hidden></div>
+    <button type="submit" id="gate-submit">Sign in</button>
+    <button type="button" class="link" id="gate-toggle">Create an account</button>
+  </form>
+</div>
+
+<!-- ====================================================== console -->
+<div class="shell" id="shell" hidden>
+
+  <nav class="rail">
+    <div class="brand"><img class="logo-on-dark" src="/static/logo-white.png" alt=""><img class="logo-on-light" src="/static/logo-black.png" alt="">Support Agent</div>
+
+    <button class="tab" data-tab="review" aria-current="page">
+      <span class="idx">01</span> Review <span class="badge" id="pending-count"></span>
+    </button>
+    <button class="tab" data-tab="knowledge"><span class="idx">02</span> Knowledge</button>
+    <button class="tab" data-tab="dashboard"><span class="idx">03</span> Dashboard</button>
+    <button class="tab" data-tab="tables"><span class="idx">04</span> Tables</button>
+    <button class="tab" data-tab="config"><span class="idx">05</span> Configuration</button>
+
+    <div class="rail-foot">
+      <div class="who" id="who"></div>
+      <div class="dry" id="dry-run" hidden>DRY RUN</div>
+      <button class="theme-toggle" id="theme-toggle" title="Switch between dark and light"></button>
+      <button class="theme-toggle" id="sound-toggle" title="A sound when a new draft arrives"></button>
+      <button class="kbd" id="shortcuts-open" title="Keyboard shortcuts (?)">?</button>
+      <button class="link" id="password-open">Change password</button>
+      <button class="link" id="sign-out">Sign out</button>
+    </div>
+  </nav>
+
+  <main>
+
+    <!-- ============================================== 01 · review -->
+    <section class="page" id="page-review">
+      <header>
+        <h1>Review</h1>
+        <p>Drafts waiting for a decision. Nothing reaches OTRS until you approve it.</p>
+      </header>
+
+      <div class="review-layout">
+        <div class="draft-list" id="draft-list"></div>
+
+        <div class="draft-detail" id="draft-detail">
+          <div class="empty">
+            <strong>Pick a draft</strong>
+            <span>The list on the left is everything the agent has decided and nobody has looked at.</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================== 02 · knowledge -->
+    <section class="page" id="page-knowledge" hidden>
+      <header>
+        <h1>Knowledge</h1>
+        <p>What the agent answers from and routes by.</p>
+      </header>
+
+      <nav class="cfg-kinds" id="ktabs">
+        <button class="cfg-kind" data-ktab="kb" aria-current="true">Knowledge base</button>
+        <button class="cfg-kind" data-ktab="scopes">Team scopes</button>
+        <button class="cfg-kind" data-ktab="keywords">Urgent</button>
+      </nav>
+
+      <!-- knowledge base: documents, searched through the index -->
+      <div class="kpanel" id="kpanel-kb">
+      <p class="cfg-hint">Documents the agent answers from. Indexing takes a minute or two.</p>
+      <div class="upload" id="drop">
+        <input type="file" id="file" hidden multiple accept=".pdf,.txt,.md,.docx,.pptx,.xlsx,.csv">
+        <strong>Drop a file here</strong>
+        <span>or <button class="link" id="pick">choose one</button></span>
+        <span>PDF (with selectable text), Word, Excel, PowerPoint, Markdown, text, CSV</span>
+      </div>
+
+      <div class="docs" id="docs"></div>
+      </div>
+
+      <!-- team scopes: one document, read whole by the agent before choosing a queue -->
+      <div class="kpanel" id="kpanel-scopes" hidden>
+        <p class="cfg-hint">What each team handles. The agent reads it before choosing a queue.</p>
+        <div class="scopes-bar">
+          <input type="file" id="scopes-file" hidden accept=".md,.txt">
+          <button class="btn approve" id="scopes-upload">Upload new version</button>
+          <a class="link" id="scopes-download" href="/api/team-scopes/download">Download</a>
+          <span class="scopes-meta" id="scopes-meta"></span>
+        </div>
+        <div class="scopes-doc" id="scopes-doc"></div>
+      </div>
+
+      <!-- urgent keywords: words that mark a ticket urgent -->
+      <div class="kpanel" id="kpanel-keywords" hidden>
+        <div class="section-label">Keywords</div>
+        <p class="cfg-hint">A message containing any of these is marked urgent.</p>
+        <div class="cfg-add-row kw-add">
+          <input type="text" id="kw-input" dir="auto" placeholder="e.g. متوقف or system down">
+          <button class="btn approve" id="kw-add">Add</button>
+        </div>
+        <div class="kw-list" id="kw-list"></div>
+
+        <div class="section-label urgent-sub">Recipients</div>
+        <p class="cfg-hint">Emailed as soon as a ticket is marked urgent.</p>
+        <div class="cfg-add-row kw-add rc-add">
+          <input type="email" id="rc-email" placeholder="name@t2.sa">
+          <input type="text" id="rc-name" dir="auto" placeholder="Name (optional)">
+          <button class="btn approve" id="rc-add">Add</button>
+        </div>
+        <div class="kw-list" id="rc-list"></div>
+      </div>
+    </section>
+
+    <!-- ============================================== 03 · dashboard -->
+    <section class="page" id="page-dashboard" hidden>
+      <header>
+        <h1>Dashboard</h1>
+        <p>How the agent is doing, and where people disagree with it.</p>
+      </header>
+      <div id="dash"></div>
+    </section>
+
+    <!-- ============================================== 04 · tables -->
+    <section class="page" id="page-tables" hidden>
+      <header>
+        <h1>Tables</h1>
+        <p>Everything stored. Click a row to see all of it.</p>
+      </header>
+
+      <div class="tables-layout">
+        <div class="table-list" id="table-list"></div>
+        <div class="table-main">
+          <div class="table-bar">
+            <input type="search" id="tbl-search" placeholder="Search this table…" autocomplete="off" dir="auto">
+            <div class="pager">
+              <button id="tbl-prev">←</button>
+              <span id="tbl-range"></span>
+              <button id="tbl-next">→</button>
+            </div>
+          </div>
+          <div class="table-scroll" id="table-scroll">
+            <div class="empty">
+              <strong>Pick a table</strong>
+              <span>The list on the left shows what is stored and how much of it.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================== 05 · configuration -->
+    <section class="page" id="page-config" hidden>
+      <header>
+        <h1>Configuration</h1>
+        <p>What the agent may choose from. Each value must match OTRS exactly,
+           or approving it will fail.</p>
+      </header>
+
+      <nav class="cfg-kinds" id="cfg-kinds"></nav>
+      <div id="cfg-body"></div>
+    </section>
+
+  </main>
+</div>
+
+<!-- the row inspector, shared by the tables view -->
+<div class="inspector" id="inspector" hidden>
+  <div class="inspector-card">
+    <header>
+      <h2 id="inspector-title"></h2>
+      <button class="link" id="inspector-close">Close</button>
+    </header>
+    <div id="inspector-body"></div>
+  </div>
+</div>
+
+
+<!-- the keyboard shortcuts overlay -->
+<div class="shortcuts" id="shortcuts" hidden>
+  <div class="shortcuts-card">
+    <header>
+      <h2>Keyboard shortcuts</h2>
+      <button class="link" id="shortcuts-close">Close</button>
+    </header>
+    <dl class="kv">
+      <dt>J / ↓</dt><dd>Next draft in the list</dd>
+      <dt>K / ↑</dt><dd>Previous draft in the list</dd>
+      <dt>A</dt><dd>Approve the current draft</dd>
+      <dt>R</dt><dd>Reject the current draft</dd>
+      <dt>E</dt><dd>Focus the "why" field (start editing)</dd>
+      <dt>/</dt><dd>Focus the table search (in Tables)</dd>
+      <dt>?</dt><dd>Show this help</dd>
+      <dt>Esc</dt><dd>Close any open panel</dd>
+    </dl>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

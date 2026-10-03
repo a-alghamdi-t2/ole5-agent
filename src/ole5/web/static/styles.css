@@ -1,0 +1,1874 @@
+/* OLE5 console — registry theme.
+ *
+ * Same structure as before, same class names, same behaviour. What changed is
+ * the visual language, back to the one the v1 console used.
+ *
+ * One rule underneath everything: machine text is monospace, human text is not.
+ * Counts, statuses, ticket numbers, queue names, column headers and timestamps
+ * are all things the system recorded, so they are mono. Email bodies, summaries,
+ * reasoning and the reply a reviewer is editing were written by a person, so
+ * they are set in a proportional face with an Arabic stack in front of it. That
+ * split is doing the work a border or a background tint would otherwise have to,
+ * and it is what keeps the dense views readable.
+ *
+ * The signature is the stamp: a ticket number rendered as a boxed, letterspaced
+ * chip. It is the literal artifact this system puts in a subject line, and it is
+ * the one element that appears on every page.
+ *
+ * Two accents carry meaning: seal green for what is settled, amber for what
+ * needs attention. Violet and rose are used sparingly for routed and failed.
+ */
+
+/* ---------------------------------------------------------------- tokens */
+
+:root {
+  /* The two anchor colours the user picked:
+     - #161616 near-black, dominant -- the ground everything sits on
+     - #f8f6ef  warm cream        -- the primary text and the light side
+     Everything else is a shade of one of those, or a muted warm earth
+     tone for state-signalling accents (sage / tan / terracotta / mauve).
+     No teal, no saturated greens or reds. The dark stays dominant. */
+
+  --ground:    #161616;   /* the user's exact dark */
+  --panel:     #1a1a18;   /* a hair lighter, warm-tinted */
+  --raise:     #222220;   /* hover/raise */
+  --hover:     #282824;
+  --rule:      #2c2c28;   /* borders */
+  --rule-soft: #1f1f1c;   /* softer borders */
+
+  --text:      #f8f6ef;   /* the user's exact cream */
+  --dim:        #c5c2b5;   /* cream, lightness reduced */
+  --faint:      #7e7b71;   /* cream, very dim */
+
+  --seal:      #9eb088;   /* muted sage -- positive, settled */
+  --seal-rgb:  158, 176, 136;
+  --amber:     #c9a878;   /* warm tan -- waiting on someone */
+  --violet:     #9a8a8e;   /* muted mauve -- handed to a person */
+  --rose:      #b07065;   /* terracotta -- failed */
+  --slate:      #7a786e;   /* warm gray -- nothing to do, closed */
+  --urgent:      #e2876f;  /* urgent: brighter terracotta, to be seen first */
+  --urgent-rule: #7a3b2c;
+  --junk:        #d0a64a;  /* suspected junk: amber */
+  --junk-rule:   #6b5a2a;
+  --scroll:      #3a3a36;
+
+  /* The old names, kept as aliases. Nothing outside this file reads them, but
+     leaving them mapped means a stray reference cannot silently lose its
+     colour, and the diff stays about appearance rather than renaming. */
+  --bg:        var(--ground);
+  --panel-2:   var(--raise);
+  --line:      var(--rule);
+  --line-soft: var(--rule-soft);
+  --green:     var(--seal);
+  --red:       var(--rose);
+  --blue:      var(--violet);
+
+  --mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
+  --sans: "Inter Tight", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --human: "IBM Plex Sans Arabic", "Noto Sans Arabic", var(--sans);
+
+  --rail: 216px;
+  --r: 10px;
+  --shadow: 0 1px 0 rgba(255,255,255,.03) inset, 0 8px 24px -14px rgba(0,0,0,.7);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+[hidden] { display: none !important; }
+
+body {
+  background: var(--ground);
+  color: var(--text);
+  font: 13px/1.55 var(--mono);
+  -webkit-font-smoothing: antialiased;
+}
+
+button { font: inherit; color: inherit; background: none; border: none; cursor: pointer; }
+input, select, textarea { font: inherit; color: inherit; }
+
+h1 { font: 650 21px/1.25 var(--sans); letter-spacing: -0.015em; }
+h2 { font: 600 15px/1.3 var(--sans); letter-spacing: -0.01em; }
+
+::selection { background: rgba(var(--seal-rgb), .25); }
+
+:focus-visible { outline: 2px solid var(--seal); outline-offset: 2px; border-radius: 4px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
+}
+
+/* ---------------------------------------------------------------- bidi
+ *
+ * Mixed Arabic/English text appears everywhere here: ticket titles with
+ * embedded English ticket numbers, customer replies quoting an English
+ * signature, agent reasoning citing an English source. The dir attribute
+ * the JS sets is a coarse "this whole element is RTL" hint, useful for
+ * typography tuning (Arabic gets a touch more line-height) but blunt --
+ * it forces the whole paragraph one way even when the first sentence is
+ * English and the second is Arabic.
+ *
+ * unicode-bidi: plaintext makes the browser resolve paragraph direction
+ * by the first strong character of each paragraph, which is the only
+ * thing that handles mixed content correctly. We pair it with
+ * text-align: start so alignment follows the resolved direction, not
+ * the container's dir.
+ *
+ *   .message, .summary        -- multi-paragraph replies, the worst case
+ *   .draft-card .title        -- one line, may start with [Ticket #..] or Arabic
+ *   #inspector-body dd        -- table cell values, free-form
+ *   .kv dd                    -- customer info (org names can be Arabic)
+ *   .field textarea           -- the reply being edited, direction follows cursor
+ *
+ * Inline elements that contain mixed text but should not leak direction
+ * into their siblings get unicode-bidi: isolate instead:
+ *
+ *   .draft-card .num          -- ticket number chip, always Latin chars
+ *   .detail-head .n           -- same, in the detail header
+ *   .pill, .chip, .status     -- system labels, always Latin
+ *
+ * Inputs that accept free text get dir="auto" in the HTML so the cursor
+ * flips as the user types. Password fields stay LTR.
+ */
+
+.message,
+.draft-card .title,
+.summary,
+.kv dd,
+#inspector-body dd,
+.field textarea {
+  unicode-bidi: plaintext;
+  text-align: start;
+}
+
+.draft-card .num,
+.detail-head .n,
+.pill,
+.chip,
+.status {
+  unicode-bidi: isolate;
+}
+
+/* ---------------------------------------------------------------- gate */
+
+.gate {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  /* A faint wash behind the card, so the sign-in page is not a flat void. */
+  background:
+    radial-gradient(680px 380px at 50% -8%, rgba(var(--seal-rgb), .07), transparent 70%),
+    var(--ground);
+}
+
+.gate-card {
+  width: 356px;
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: 14px;
+  padding: 32px 30px 26px;
+  display: grid;
+  gap: 14px;
+  box-shadow: var(--shadow);
+  animation: gate-in .3s cubic-bezier(.2,.8,.2,1);
+}
+@keyframes gate-in { from { opacity: 0; transform: translateY(8px); } }
+
+/* The mark, centred above the wordmark. */
+.gate-logo {
+  width: 60px;
+  height: 60px;
+  object-fit: contain;
+  display: block;
+  margin: 0 auto 2px;
+}
+
+.gate-card h1 {
+  font: 700 20px/1 var(--mono);
+  letter-spacing: .22em;
+  text-align: center;
+  text-indent: .22em;   /* balances the trailing letter-space */
+  color: var(--text);
+}
+
+.gate-sub {
+  color: var(--dim);
+  font-size: 12px;
+  text-align: center;
+  margin-bottom: 6px;
+}
+
+.gate-card label {
+  display: grid;
+  gap: 6px;
+  font-size: 10px;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.gate-card input,
+.draft-detail input,
+.draft-detail select,
+.draft-detail textarea,
+.table-bar input,
+#page-config input {
+  background: var(--ground);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 9px 11px;
+  outline: none;
+  transition: border-color .13s, box-shadow .13s;
+}
+
+.gate-card input:focus,
+.draft-detail input:focus,
+.draft-detail select:focus,
+.draft-detail textarea:focus,
+.table-bar input:focus,
+#page-config input:focus {
+  border-color: var(--seal);
+  box-shadow: 0 0 0 3px rgba(var(--seal-rgb), .12);
+}
+
+.gate-card button[type=submit] {
+  background: var(--seal);
+  color: var(--ground);
+  font-weight: 700;
+  letter-spacing: .02em;
+  padding: 10px;
+  border-radius: 6px;
+  margin-top: 8px;
+  transition: filter .13s, transform .06s;
+}
+.gate-card button[type=submit]:hover { filter: brightness(1.08); }
+.gate-card button[type=submit]:active { transform: translateY(1px); }
+
+.gate-error {
+  background: rgba(176, 112, 101, .1);
+  border: 1px solid rgba(176, 112, 101, .35);
+  color: var(--rose);
+  border-radius: 6px;
+  padding: 9px 11px;
+  font-size: 12px;
+}
+
+.link { color: var(--seal); font-size: 12px; text-align: center; }
+.link:hover { text-decoration: underline; }
+
+/* ---------------------------------------------------------------- shell */
+
+.shell { display: grid; grid-template-columns: var(--rail) minmax(0, 1fr); min-height: 100vh; }
+
+.rail {
+  background: var(--panel);
+  border-right: 1px solid var(--rule);
+  padding: 20px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 2px 6px 22px;
+  font: 700 12px/1 var(--mono);
+  letter-spacing: .16em;
+  color: var(--text);
+}
+.brand img { width: 32px; height: 32px; object-fit: contain; flex: none; }
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  color: var(--dim);
+  font-size: 12.5px;
+  text-align: left;
+  transition: background .13s, color .13s;
+}
+
+.tab:hover { color: var(--text); background: var(--raise); }
+.tab[aria-current=page] {
+  color: var(--text);
+  background: var(--raise);
+  box-shadow: inset 2px 0 0 var(--seal);
+}
+
+.idx { font: 10px var(--mono); letter-spacing: .08em; color: var(--faint); }
+.tab[aria-current=page] .idx { color: var(--seal); }
+
+.badge {
+  margin-left: auto;
+  background: var(--seal);
+  color: var(--ground);
+  border-radius: 999px;
+  padding: 1px 7px;
+  font: 700 10px var(--mono);
+}
+.badge:empty { display: none; }
+
+.rail-foot {
+  margin-top: auto;
+  padding: 14px 8px 0;
+  border-top: 1px solid var(--rule-soft);
+  display: grid;
+  gap: 8px;
+}
+.who { font-size: 11px; color: var(--dim); overflow-wrap: anywhere; }
+.dry {
+  font: 700 9.5px var(--mono);
+  letter-spacing: .14em;
+  color: var(--seal);
+  border: 1px solid rgba(var(--seal-rgb), .4);
+  background: rgba(var(--seal-rgb), .07);
+  border-radius: 4px;
+  padding: 4px 6px;
+  text-align: center;
+}
+.rail-foot .link { text-align: left; font-size: 11px; color: var(--faint); }
+.rail-foot .link:hover { color: var(--seal); }
+
+main { padding: 26px 30px 46px; min-width: 0; }
+
+.page > header { margin-bottom: 22px; }
+.page > header p { color: var(--dim); font-size: 12px; margin-top: 5px; max-width: 66ch; }
+
+.empty {
+  display: grid;
+  gap: 7px;
+  place-content: center;
+  text-align: center;
+  padding: 58px 20px;
+  color: var(--faint);
+}
+.empty strong { color: var(--dim); font-weight: 600; font-size: 13px; }
+.empty span { font-size: 12px; max-width: 44ch; }
+
+/* --------------------------------------------------------- the signature */
+
+/* Ticket numbers and record ids, stamped. Applied to the elements that already
+   carry them, so no markup or script had to change. */
+.draft-card .num,
+.detail-head .n {
+  display: inline-flex;
+  align-items: center;
+  font: 600 10.5px var(--mono);
+  letter-spacing: .09em;
+  color: var(--seal);
+  background: rgba(var(--seal-rgb), .07);
+  border: 1px solid rgba(var(--seal-rgb), .3);
+  border-radius: 4px;
+  padding: 2px 7px;
+  white-space: nowrap;
+}
+.draft-card .num::before,
+.detail-head .n::before { content: "["; opacity: .45; margin-right: 3px; }
+.draft-card .num::after,
+.detail-head .n::after { content: "]"; opacity: .45; margin-left: 3px; }
+
+/* ---------------------------------------------------------------- review */
+
+.review-layout {
+  display: grid;
+  grid-template-columns: 312px 1fr;
+  gap: 18px;
+  align-items: start;
+}
+
+.draft-list { display: grid; gap: 7px; }
+
+.draft-card {
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-left: 3px solid transparent;
+  border-radius: var(--r);
+  padding: 12px 14px;
+  cursor: pointer;
+  display: grid;
+  gap: 6px;
+  transition: background .13s, border-color .13s;
+}
+.draft-card:hover { background: var(--raise); }
+.draft-card[aria-current=true] {
+  border-left-color: var(--seal);
+  background: var(--raise);
+}
+
+.draft-card .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.draft-card .title {
+  font: 13px/1.5 var(--human);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.draft-card .meta { font-size: 10.5px; color: var(--faint); }
+
+.pill {
+  display: inline-block;
+  font: 10px var(--mono);
+  letter-spacing: .1em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.pill.answer   { color: var(--seal); }
+.pill.ask_more { color: var(--amber); }
+.pill.route    { color: var(--violet); }
+.pill.low      { color: var(--rose); }
+.pill.medium   { color: var(--amber); }
+.pill.high     { color: var(--seal); }
+
+.draft-detail {
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: var(--r);
+  min-height: 360px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  /* The detail panel can grow tall when a reply is long; cap it at the
+     viewport so the action bar stays reachable instead of scrolling
+     the whole page. */
+  max-height: calc(100vh - 132px);
+}
+
+.detail-head {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--rule);
+  background: linear-gradient(var(--raise), var(--panel));
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.detail-head h2 {
+  margin-left: auto;
+  font: 600 15px/1.3 var(--human);
+  letter-spacing: -0.01em;
+  color: var(--text);
+  text-align: end;
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  overflow: auto;
+  flex: 1;
+  min-height: 0;  /* let it actually shrink inside the flex parent */
+}
+.detail-grid > * { padding: 18px 20px; min-width: 0; }
+.detail-grid > :first-child { border-right: 1px solid var(--rule-soft); }
+
+@media (max-width: 1100px) {
+  .detail-grid { grid-template-columns: 1fr; }
+  .detail-grid > :first-child { border-right: none; border-bottom: 1px solid var(--rule-soft); }
+  .review-layout { grid-template-columns: 1fr; }
+}
+
+.section-label {
+  font: 600 11.5px var(--mono);
+  letter-spacing: .12em;
+  color: var(--dim);
+  text-transform: uppercase;
+  margin-bottom: 9px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.section-label::after { content: ""; flex: 1; height: 1px; background: var(--rule-soft); }
+.section-label + .section-label,
+* + .section-label { margin-top: 22px; }
+
+/* What a person wrote. Proportional, with an Arabic face in front. */
+.message {
+  background: var(--ground);
+  border: 1px solid var(--rule-soft);
+  border-left: 2px solid var(--seal);
+  border-radius: 7px;
+  padding: 13px 15px;
+  font: 13.5px/1.72 var(--human);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 420px;
+  overflow: auto;
+}
+.message[dir=rtl] { font-size: 14px; }
+
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 5px 14px; font-size: 12px; }
+.kv dt { color: var(--faint); }
+.kv dd { color: var(--dim); overflow-wrap: anywhere; }
+
+.fields { display: grid; gap: 11px; }
+.field { display: grid; gap: 5px; }
+.field > label {
+  font: 9.5px var(--mono);
+  letter-spacing: .13em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.field select, .field input, .field textarea { width: 100%; }
+/* The reply the customer will read: human text, so not mono. */
+.field textarea {
+  min-height: 44px;
+  resize: none;
+  font: 13.5px/1.72 var(--human);
+  overflow: hidden;  /* autoGrow manages height; no internal scrollbar */
+}
+.field.changed > label::after { content: " · changed"; color: var(--amber); letter-spacing: 0; }
+.field.changed select,
+.field.changed input,
+.field.changed textarea {
+  border-color: var(--amber);
+  box-shadow: 0 0 0 3px rgba(201, 168, 120, .1);
+}
+
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  background: var(--ground);
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  padding: 3px 8px;
+  font-size: 11.5px;
+  font-family: var(--human);
+  color: var(--dim);
+}
+
+.detail-actions {
+  border-top: 1px solid var(--rule);
+  background: var(--raise);
+  padding: 14px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  /* Stick to the bottom of the detail panel so Approve/Reject are always
+     reachable even when the reply body is several screens long. */
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+}
+.detail-actions .why {
+  width: 100%;
+  min-height: 44px;
+  resize: none;
+  overflow: hidden;
+  font: 13.5px/1.6 var(--human);
+  unicode-bidi: plaintext;
+  text-align: start;
+  /* Inherits bg/border/padding from the .draft-detail textarea rule. */
+}
+
+.actions-row {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.btn {
+  padding: 9px 17px;
+  border-radius: 6px;
+  font-weight: 700;
+  font-size: 12.5px;
+  transition: filter .13s, background .13s, transform .06s;
+}
+.btn:active:not(:disabled) { transform: translateY(1px); }
+.btn.approve { background: var(--seal); color: var(--ground); }
+.btn.approve:hover { filter: brightness(1.08); }
+.btn.reject  { background: transparent; color: var(--rose); border: 1px solid rgba(176,112,101,.4); }
+.btn.reject:hover { background: rgba(176,112,101,.1); }
+.btn.ghost   { background: var(--raise); color: var(--dim); border: 1px solid var(--rule); }
+.btn:disabled { opacity: .45; cursor: default; }
+
+/* ---------------------------------------------------------------- knowledge */
+
+.upload {
+  border: 1px dashed var(--rule);
+  border-radius: var(--r);
+  padding: 36px;
+  text-align: center;
+  display: grid;
+  gap: 7px;
+  color: var(--dim);
+  margin-bottom: 18px;
+  transition: border-color .15s, background .15s;
+}
+.upload.over {
+  border-color: var(--seal);
+  background: rgba(var(--seal-rgb), .06);
+}
+.upload span { font-size: 12px; color: var(--faint); }
+
+.docs { display: grid; gap: 7px; }
+.doc {
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: var(--r);
+  padding: 12px 15px;
+  display: grid;
+  grid-template-columns: 1fr auto auto auto;
+  gap: 16px;
+  align-items: center;
+  font-size: 12.5px;
+  transition: background .13s;
+}
+.doc:hover { background: var(--raise); }
+.doc .sub { font-size: 10.5px; color: var(--faint); margin-top: 2px; }
+.doc .err { color: var(--rose); font-size: 11.5px; grid-column: 1 / -1; }
+
+.status { font: 600 9.5px var(--mono); letter-spacing: .13em; text-transform: uppercase; }
+.status.pending { color: var(--amber); }
+.status.indexed { color: var(--seal); }
+.status.failed  { color: var(--rose); }
+
+/* ---------------------------------------------------------------- dashboard
+ * Redesigned: pipeline traffic visual, KPI hero cards, two donut
+ * compositions, two distribution bars, and a passive outbox status line
+ * (no Send button -- the background send task runs on its own).
+ */
+
+/* --------------------------------------------------------- pipeline traffic
+ * The through-line of the whole system: drafts -> pending review ->
+ * approved -> outbox -> OTRS. Each stage shows its current count; the
+ * arrows between stages pulse when the stage behind them has work
+ * waiting, so the only movement on the page is where work is actually
+ * flowing.
+ */
+
+.pipeline {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: var(--r);
+  padding: 18px 8px;
+  margin-bottom: 18px;
+  box-shadow: var(--shadow);
+}
+
+.pipe-stage {
+  flex: 1;
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  text-align: center;
+  padding: 6px 6px;
+  border-radius: 8px;
+  transition: background .15s;
+}
+.pipe-stage.hot { background: rgba(var(--seal-rgb), .06); }
+
+.pipe-stage .n {
+  font: 600 26px/1 var(--mono);
+  letter-spacing: -0.02em;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.pipe-stage.hot .n { color: var(--amber); }
+
+.pipe-stage .l {
+  font: 600 9px var(--mono);
+  letter-spacing: .13em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+/* --------------------------------------------------------- KPI hero row
+ * Four big-number cards. The first (clean-approval rate) is the
+ * headline metric, so it gets a hero treatment -- slightly larger
+ * number, hint text underneath.
+ */
+
+.kpi-row {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr 1fr 1fr;
+  gap: 14px;
+  margin-bottom: 22px;
+}
+
+.kpi {
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: var(--r);
+  padding: 18px 22px;
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 7px;
+  align-content: start;
+}
+
+.kpi .n {
+  font: 600 30px/1.1 var(--mono);
+  letter-spacing: -0.02em;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.kpi .l {
+  font: 600 9.5px var(--mono);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.kpi .h {
+  font: 12px/1.55 var(--human);
+  color: var(--dim);
+  margin-top: 4px;
+}
+
+.kpi-hero {
+  background: linear-gradient(160deg, var(--raise) 0%, var(--panel) 60%);
+  border-color: rgba(var(--seal-rgb), .3);
+}
+.kpi-hero .n {
+  font-size: 40px;
+  color: var(--seal);
+}
+.kpi-hero .l { color: var(--dim); }
+
+/* --------------------------------------------------------- composition
+ * Two cards side by side, each with a donut chart and a legend.
+ */
+
+.composition {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-bottom: 22px;
+}
+
+.comp-card {
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: var(--r);
+  padding: 18px 22px;
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 16px;
+}
+
+.comp-card > .l {
+  font: 600 9.5px var(--mono);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.comp-inner {
+  display: grid;
+  grid-template-columns: 130px 1fr;
+  gap: 20px;
+  align-items: center;
+}
+
+.donut {
+  width: 130px;
+  height: 130px;
+  display: block;
+}
+
+.donut-empty {
+  width: 130px;
+  height: 130px;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  border: 1px dashed var(--rule);
+  border-radius: 50%;
+  color: var(--faint);
+}
+.donut-empty .n { font: 600 26px var(--mono); color: var(--faint); }
+.donut-empty .l { font: 9px var(--mono); letter-spacing: .13em; text-transform: uppercase; }
+
+.legend { display: grid; gap: 9px; }
+
+.legend-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+}
+
+.swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex: none;
+}
+
+.legend-label {
+  flex: 1;
+  color: var(--dim);
+  font-family: var(--human);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.legend-value {
+  font: 600 12px var(--mono);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* --------------------------------------------------------- distributions
+ * Two horizontal bar charts side by side: top corrected fields, and
+ * drafts per queue.
+ */
+
+.distributions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-bottom: 22px;
+}
+
+.dist-card {
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: var(--r);
+  padding: 18px 22px;
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 14px;
+}
+
+.dist-card > .l {
+  font: 600 9.5px var(--mono);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.dist-bars { display: grid; gap: 9px; }
+
+.dist-bar {
+  display: grid;
+  grid-template-columns: 200px 1fr 40px;
+  gap: 12px;
+  align-items: center;
+  font-size: 12.5px;
+}
+
+.dist-bar .label {
+  color: var(--dim);
+  font-family: var(--human);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dist-bar .track {
+  background: var(--ground);
+  border-radius: 4px;
+  height: 9px;
+  overflow: hidden;
+}
+
+.dist-bar .fill {
+  background: linear-gradient(90deg, rgba(var(--seal-rgb), .55) 0%, var(--seal) 100%);
+  height: 100%;
+  border-radius: 4px;
+  animation: grow .5s cubic-bezier(.2,.8,.2,1);
+  transform-origin: left;
+}
+
+.dist-bar .v {
+  font: 600 12px var(--mono);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* --------------------------------------------------------- outbox status
+ * A single passive line. No button -- the background send task runs
+ * after every approval; this just shows where things stand.
+ */
+
+.outbox-status {
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: var(--r);
+  padding: 14px 22px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font: 12.5px var(--mono);
+  color: var(--dim);
+}
+
+.outbox-label {
+  font: 600 9.5px var(--mono);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.outbox-pill {
+  font: 700 11px var(--mono);
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--rule);
+}
+.outbox-pill.hot {
+  color: var(--amber);
+  border-color: rgba(201, 168, 120, .35);
+  background: rgba(201, 168, 120, .08);
+}
+.outbox-pill.idle { color: var(--faint); }
+
+.outbox-sep { color: var(--faint); }
+.outbox-fail { color: var(--rose); font-weight: 600; }
+.outbox-ok {
+  margin-left: auto;
+  color: var(--seal);
+  font-weight: 600;
+}
+
+/* --------------------------------------------------------- responsive
+ * On narrow viewports the KPI row stacks to 2 columns, the composition
+ * and distributions stack to 1 column. The pipeline is already a row
+ * of small stages; on mobile it scrolls horizontally.
+ */
+
+@media (max-width: 1100px) {
+  .kpi-row { grid-template-columns: 1fr 1fr 1fr; }
+  .kpi-hero { grid-column: 1 / -1; }
+  .composition { grid-template-columns: 1fr; }
+  .distributions { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 700px) {
+  .kpi-row { grid-template-columns: 1fr; }
+  .pipeline { overflow-x: auto; }
+  .pipe-stage { min-width: 110px; }
+  .comp-inner { grid-template-columns: 110px 1fr; }
+  .donut, .donut-empty { width: 110px; height: 110px; }
+  .dist-bar { grid-template-columns: 120px 1fr 32px; }
+}
+
+/* ---------------------------------------------------------------- tables */
+
+.tables-layout { display: grid; grid-template-columns: 216px 1fr; gap: 18px; align-items: start; }
+.table-list { display: grid; gap: 3px; }
+.table-list button {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: var(--dim);
+  font-size: 12px;
+  text-align: left;
+}
+.table-list button:hover { background: var(--raise); color: var(--text); }
+.table-list button[aria-current=true] {
+  background: var(--raise);
+  border-color: var(--rule);
+  color: var(--text);
+}
+.table-list .c { font: 10.5px var(--mono); color: var(--faint); font-variant-numeric: tabular-nums; }
+.table-list button[aria-current=true] .c { color: var(--seal); }
+
+.table-main {
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: var(--r);
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+.table-bar {
+  display: flex;
+  gap: 12px;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--rule);
+  align-items: center;
+}
+.table-bar input { flex: 1; }
+.pager { display: flex; align-items: center; gap: 9px; font: 11px var(--mono); color: var(--faint); }
+.pager button { padding: 4px 10px; border: 1px solid var(--rule); border-radius: 5px; color: var(--dim); }
+.pager button:hover:not(:disabled) { border-color: var(--seal); color: var(--text); }
+.pager button:disabled { opacity: .3; cursor: default; }
+
+.table-scroll { overflow: auto; max-height: calc(100vh - 220px); }
+table { border-collapse: collapse; width: 100%; font-size: 11.5px; }
+th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--raise);
+  text-align: left;
+  padding: 9px 12px;
+  font: 600 9.5px var(--mono);
+  letter-spacing: .13em;
+  text-transform: uppercase;
+  color: var(--faint);
+  border-bottom: 1px solid var(--rule);
+  white-space: nowrap;
+}
+td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--rule-soft);
+  color: var(--dim);
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+tbody tr:hover td { background: var(--raise); color: var(--text); cursor: pointer; }
+td.null { color: var(--faint); font-style: italic; }
+
+/* ---------------------------------------------------------------- inspector */
+
+.inspector {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, .72);
+  display: grid;
+  place-items: center;
+  padding: 30px;
+  z-index: 40;
+  animation: fade .16s ease-out;
+}
+@keyframes fade { from { opacity: 0; } }
+
+.inspector-card {
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: 14px;
+  width: min(880px, 100%);
+  max-height: 84vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 30px 80px -30px rgba(0,0,0,.9);
+  animation: pop .2s cubic-bezier(.2,.8,.2,1);
+}
+@keyframes pop { from { opacity: 0; transform: translateY(10px) scale(.99); } }
+
+.inspector-card > header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px 18px;
+  border-bottom: 1px solid var(--rule);
+}
+.inspector-card > header h2 { font-family: var(--mono); font-size: 12.5px; letter-spacing: .06em; color: var(--seal); }
+
+#inspector-body { overflow: auto; padding: 16px 18px; }
+#inspector-body .kv { grid-template-columns: 180px 1fr; gap: 0; }
+#inspector-body .kv dt,
+#inspector-body .kv dd {
+  padding: 10px 0;
+  border-top: 1px solid var(--line-soft);
+}
+#inspector-body .kv dt:first-of-type,
+#inspector-body .kv dd:first-of-type { border-top: none; }
+
+#inspector-body dd {
+  font: 12.5px/1.6 var(--mono);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+#inspector-body dd {
+  font: 12.5px/1.6 var(--mono);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+#inspector-body dd[dir="rtl"] {
+  font-family: var(--human);
+  font-size: 13.5px;
+  line-height: 1.72;
+}
+
+/* JSON gets its own scrolling box rather than making the panel enormous. */
+#inspector-body dd.json {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 10px 12px;
+  max-height: 320px;
+  overflow: auto;
+  resize: vertical;
+}
+
+/* ---------------------------------------------------------------- toast */
+
+.toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--raise);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  padding: 11px 18px;
+  font-size: 12.5px;
+  z-index: 60;
+  box-shadow: 0 14px 40px -16px rgba(0,0,0,.9);
+  animation: toast-in .22s cubic-bezier(.2,.8,.2,1);
+}
+@keyframes toast-in { from { opacity: 0; transform: translate(-50%, 8px); } }
+.toast.bad  { border-color: rgba(176,112,101,.5); color: var(--rose); }
+.toast.good { border-color: rgba(var(--seal-rgb), .5); color: var(--seal); }
+
+
+/* Keyboard shortcut hint -- a quiet chip in the rail footer. */
+.kbd {
+  font: 600 9px var(--mono);
+  letter-spacing: .08em;
+  color: var(--faint);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 3px 6px;
+  text-align: center;
+  cursor: pointer;
+  transition: color .13s, border-color .13s;
+}
+.kbd:hover { color: var(--seal); border-color: rgba(var(--seal-rgb), .4); }
+
+/* ---------------------------------------------------------------- shortcuts overlay
+ * Modal that lists the keyboard shortcuts. Same shell as the inspector.
+ */
+
+.shortcuts {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, .72);
+  display: grid;
+  place-items: center;
+  padding: 30px;
+  z-index: 50;
+  animation: fade .16s ease-out;
+}
+
+.shortcuts-card {
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: 14px;
+  width: min(440px, 100%);
+  box-shadow: 0 30px 80px -30px rgba(0,0,0,.9);
+  animation: pop .2s cubic-bezier(.2,.8,.2,1);
+}
+
+.shortcuts-card > header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px 18px;
+  border-bottom: 1px solid var(--rule);
+}
+.shortcuts-card > header h2 { font-family: var(--mono); font-size: 12.5px; letter-spacing: .06em; color: var(--seal); }
+
+.shortcuts-card .kv { grid-template-columns: 110px 1fr; padding: 8px 18px 18px; }
+.shortcuts-card .kv dt {
+  font: 600 11px var(--mono);
+  letter-spacing: .06em;
+  color: var(--faint);
+  padding: 8px 0;
+  border-top: 1px solid var(--rule-soft);
+}
+.shortcuts-card .kv dd {
+  padding: 8px 0;
+  border-top: 1px solid var(--rule-soft);
+  color: var(--dim);
+}
+.shortcuts-card .kv dt:first-of-type,
+.shortcuts-card .kv dd:first-of-type { border-top: none; }
+
+/* ---------------------------------------------------------------- refresh indicator
+ * Subtle pulse on the active tab while a refetch is in flight. SSE
+ * fires a nudge, the page refetches; this is the only visible feedback.
+ */
+
+.tab.refreshing .idx { color: var(--amber); animation: pulse 1s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .35; } }
+
+/* New-draft badge -- brief highlight when the pending count rises. */
+.badge.fresh {
+  animation: badge-fresh 1.2s cubic-bezier(.2,.8,.2,1);
+}
+@keyframes badge-fresh {
+  0%   { transform: scale(1); }
+  30%  { transform: scale(1.25); background: var(--amber); }
+  100% { transform: scale(1); }
+}
+
+/* ---------------------------------------------------------------- labeled pills
+ * The bare "answer" / "high" pills worked when the only people using
+ * the console wrote it. New reviewers do not know "high" is the
+ * confidence, not the priority. Each pill now carries a label.
+ */
+
+.pill-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pill-label {
+  font: 600 9.5px var(--mono);
+  letter-spacing: .13em;
+  text-transform: uppercase;
+  color: var(--faint);
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------- empty meta
+ * Where a section is shown but its data is absent ("Based on: nothing"),
+ * a faint italic line is more useful than hiding the section. Hiding
+ * makes a reviewer wonder if the agent forgot; an explicit "nothing"
+ * says the agent looked and found nothing.
+ */
+
+.empty-meta {
+  font: 12.5px/1.6 var(--human);
+  color: var(--faint);
+  font-style: italic;
+  padding: 4px 0;
+}
+
+/* ---------------------------------------------------------------- inspector cells
+ * The table-row inspector shows one value per dd. New value types need
+ * their own visual state.
+ */
+
+#inspector-body dd.null {
+  color: var(--faint);
+  font-style: italic;
+}
+
+/* ---------------------------------------------------------------- evidence renderer
+ * The evidence JSON the orchestrator emits is nested and verbose. In
+ * the inspector it is rendered as a summary a person can scan, with a
+ * "show raw" toggle that exposes the original bytes for audit.
+ */
+
+.evidence {
+  display: grid;
+  gap: 10px;
+  font-family: var(--human);
+}
+
+.evidence-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ev-chip {
+  font: 600 10px var(--mono);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--dim);
+  background: var(--ground);
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  padding: 3px 9px;
+}
+.ev-chip.ev-dim   { color: var(--faint); }
+.ev-chip.ev-amber { color: var(--amber); border-color: rgba(201, 168, 120, .35); }
+
+.evidence-label {
+  font: 600 9.5px var(--mono);
+  letter-spacing: .13em;
+  text-transform: uppercase;
+  color: var(--faint);
+  margin-top: 2px;
+}
+
+.evidence-list {
+  list-style: none;
+  display: grid;
+  gap: 4px;
+  font: 12.5px/1.5 var(--human);
+  color: var(--dim);
+  padding: 0;
+  margin: 0;
+}
+.evidence-list li {
+  background: var(--ground);
+  border: 1px solid var(--rule-soft);
+  border-radius: 5px;
+  padding: 5px 9px;
+  word-break: break-word;
+}
+.evidence-list.ev-indirect li {
+  color: var(--faint);
+  font-style: italic;
+}
+
+.ev-raw-toggle {
+  font-size: 11px;
+  text-align: left;
+  padding: 2px 0;
+  color: var(--seal);
+}
+
+.evidence-raw {
+  background: var(--ground);
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  padding: 10px 12px;
+  max-height: 320px;
+  overflow: auto;
+  font: 11px/1.5 var(--mono);
+  white-space: pre;
+  color: var(--dim);
+  margin: 0;
+}
+
+/* ---------------------------------------------------------------- audit-log actor
+ * When the inspector shows an audit_log row, the `actor` cell can carry
+ * a resolved reviewer name (the backend JOINs through reviews ->
+ * reviewers). The raw "reviewer" string still travels in the title
+ * attribute for audit. Layout:
+ *
+ *   Ahmed Al-Saud · ahmed@example.com · approved
+ *   (raw: reviewer)
+ *
+ * where the first span is the human name, the second is the email
+ * (always LTR even in RTL context), and the third is the review outcome.
+ */
+
+.actor-name {
+  font: 600 13px var(--human);
+  color: var(--text);
+}
+.actor-email {
+  font: 11.5px var(--mono);
+  color: var(--dim);
+}
+.actor-sep {
+  color: var(--faint);
+  margin: 0 2px;
+}
+.actor-outcome {
+  font: 600 10px var(--mono);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--seal);
+  margin-left: 4px;
+}
+
+/* ---------------------------------------------------------------- detail-head chip
+ * The decision and confidence in the detail head are bracketed chips,
+ * same visual family as the [#N] draft-id chip. The chip's border and
+ * background tint are derived from currentColor via color-mix, so each
+ * variant just needs its text colour set -- no per-variant rgba.
+ * Brackets come from ::before/::after, same as .n.
+ */
+
+.detail-head .chip {
+  display: inline-flex;
+  align-items: center;
+  font: 600 10.5px var(--mono);
+  letter-spacing: .09em;
+  border-radius: 4px;
+  padding: 2px 7px;
+  white-space: nowrap;
+  border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+  background: color-mix(in srgb, currentColor 8%, transparent);
+}
+.detail-head .chip::before { content: "["; opacity: .45; margin-right: 3px; }
+.detail-head .chip::after { content: "]"; opacity: .45; margin-left: 3px; }
+
+.detail-head .chip.answer   { color: var(--seal); }
+.detail-head .chip.ask_more { color: var(--amber); }
+.detail-head .chip.route    { color: var(--violet); }
+.detail-head .chip.low      { color: var(--rose); }
+.detail-head .chip.medium   { color: var(--amber); }
+.detail-head .chip.high     { color: var(--seal); }
+
+/* The label inside the chip -- slightly faded so the value reads as
+   the primary signal. */
+.detail-head .chip-key {
+  opacity: .55;
+  font-weight: 500;
+  margin-right: 3px;
+}
+
+/* ---------------------------------------------------------------- timeseries
+ * Single-line chart of polled tickets per day. SVG polyline + dashed
+ * grid. Sits between the KPI row and the donut compositions.
+ */
+
+.timeseries-card {
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: var(--r);
+  padding: 18px 22px;
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 14px;
+  margin-bottom: 22px;
+}
+
+.timeseries-card > .l {
+  font: 600 9.5px var(--mono);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.timeseries {
+  width: 100%;
+  height: 160px;
+  display: block;
+}
+
+/* ---------------------------------------------------------------- mobile */
+
+@media (max-width: 900px) {
+  .shell { grid-template-columns: 1fr; }
+  .rail {
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    height: auto;
+    padding: 10px 12px;
+    border-right: 0;
+    border-bottom: 1px solid var(--rule);
+    overflow-x: auto;
+  }
+  .brand { padding: 0 10px 0 0; }
+  .rail-foot {
+    margin: 0 0 0 auto;
+    padding: 0 0 0 12px;
+    border: 0;
+    grid-auto-flow: column;
+    align-items: center;
+    gap: 12px;
+  }
+  /* overflow-wrap:anywhere is right in a 216px rail and disastrous in a
+     horizontal bar -- the name wraps to one letter per line and drags the
+     whole bar to 200px tall. */
+  .who { white-space: nowrap; overflow-wrap: normal; }
+  .tab { white-space: nowrap; }
+  main { padding: 18px 15px 40px; }
+  .tables-layout { grid-template-columns: 1fr; }
+  .table-list { grid-auto-flow: column; grid-auto-columns: max-content; overflow-x: auto; }
+  .bar { grid-template-columns: 120px 1fr auto; }
+  #inspector-body .kv { grid-template-columns: 1fr; gap: 2px; }
+}
+
+/* ---------------------------------------------------------------- scrollbar */
+
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--rule); border-radius: 5px; }
+::-webkit-scrollbar-thumb:hover { background: var(--scroll); }
+
+/* ---------------------------------------------------------------- configuration
+ * One kind at a time. The switcher is the table list turned on its side:
+ * same buttons, same count in mono, same seal on the current one.
+ */
+
+.cfg-kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-bottom: 16px;
+}
+.cfg-kind {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 12px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: var(--dim);
+  font-size: 12px;
+}
+.cfg-kind:hover { background: var(--raise); color: var(--text); }
+.cfg-kind[aria-current=true] {
+  background: var(--raise);
+  border-color: var(--rule);
+  color: var(--text);
+}
+.cfg-kind .c { font: 10.5px var(--mono); color: var(--faint); font-variant-numeric: tabular-nums; }
+.cfg-kind[aria-current=true] .c { color: var(--seal); }
+
+.cfg-hint { font-size: 12px; color: var(--faint); margin: 0 0 12px; }
+
+.cfg-list {
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: var(--r);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.cfg-row {
+  display: grid;
+  grid-template-columns: minmax(200px, 2fr) 3fr 76px 72px;
+  gap: 14px;
+  align-items: center;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--rule-soft);
+}
+.cfg-row:last-child { border-bottom: none; }
+.cfg-row:hover { background: var(--raise); }
+
+/* A value is something OTRS recorded: machine text, so mono. */
+.cfg-value {
+  font: 12px var(--mono);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.cfg-row.off .cfg-value { color: var(--faint); text-decoration: line-through; }
+
+/* The description is written by a person and read by the agent. */
+#page-config .cfg-desc {
+  width: 100%;
+  font: 12.5px/1.4 var(--human);
+  padding: 6px 9px;
+  background: transparent;
+  border-color: transparent;
+}
+#page-config .cfg-desc:hover { border-color: var(--rule); }
+#page-config .cfg-desc:focus { background: var(--ground); }
+#page-config .cfg-desc::placeholder { color: var(--faint); opacity: .6; }
+
+.status.off { color: var(--slate); }
+
+.cfg-lock {
+  font: 9.5px var(--mono);
+  letter-spacing: .1em;
+  color: var(--faint);
+  cursor: help;
+  text-align: right;
+}
+.cfg-row .link { justify-self: end; }
+
+.cfg-add { margin-top: 22px; }
+.cfg-add-row {
+  display: grid;
+  grid-template-columns: minmax(200px, 2fr) 3fr auto;
+  gap: 10px;
+}
+#page-config .cfg-add-row input:first-child { font-family: var(--mono); font-size: 12px; }
+#page-config .cfg-add-row input:nth-child(2) { font-family: var(--human); }
+
+@media (max-width: 900px) {
+  .cfg-row { grid-template-columns: 1fr auto auto; }
+  .cfg-row .cfg-desc { grid-column: 1 / -1; grid-row: 2; }
+  .cfg-add-row { grid-template-columns: 1fr; }
+}
+
+/* ---------------------------------------------------------------- similar past tickets
+ * A precedent is read for where it ended up, so the queue leads, and the
+ * customer's words follow, trimmed, opening on click.
+ */
+.similar { margin-top: 4px; }
+.similar-item {
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  background: var(--panel);
+}
+.similar-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.similar-number { font: 12px var(--mono); color: var(--text); margin-right: 4px; }
+.similar-date { font: 10.5px var(--mono); color: var(--faint); margin-left: auto; }
+.similar-title { font-size: 12.5px; color: var(--text); margin-bottom: 4px; }
+.similar-text {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--dim);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.similar-text.clickable { cursor: pointer; }
+.similar-text.clickable:hover { color: var(--text); }
+.chip.dim { opacity: .7; }
+
+/* The route a precedent took, and what happened on it. */
+.similar-path {
+  font: 11px var(--mono);
+  color: var(--seal);
+  margin-bottom: 4px;
+  overflow-wrap: anywhere;
+}
+.similar-path.has-why { cursor: help; border-bottom: 1px dotted var(--rule); display: inline-block; }
+.similar-journey {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+/* ---------------------------------------------------------------- junk warning
+ * Amber, not red: the ticket is suspected, not condemned, and the reviewer
+ * decides. Sits above the message, since it changes how to read it.
+ */
+.junk-warn {
+  border: 1px solid var(--junk-rule);
+  border-left: 3px solid var(--junk);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  background: var(--raise);
+}
+.junk-head { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+.junk-label {
+  font: 10px var(--mono);
+  letter-spacing: .12em;
+  color: var(--junk);
+}
+.junk-score { font: 10.5px var(--mono); color: var(--faint); }
+.junk-reason { font-size: 12.5px; color: var(--text); margin-bottom: 6px; }
+.junk-match { display: flex; gap: 8px; align-items: baseline; margin-top: 3px; }
+.junk-number { font: 11px var(--mono); color: var(--dim); white-space: nowrap; }
+.junk-text { font-size: 12px; color: var(--faint); overflow-wrap: anywhere; }
+
+/* ---------------------------------------------------------------- knowledge: team scopes and keywords */
+#ktabs { margin-bottom: 10px; }
+.scopes-bar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 12px; }
+.scopes-meta { font: 11px var(--mono); color: var(--faint); }
+.scopes-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: 12.5px/1.6 var(--mono);
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: var(--r, 8px);
+  padding: 16px 18px;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+.kw-add { margin-bottom: 12px; grid-template-columns: 1fr auto; }
+#page-knowledge .kw-add input {
+  background: var(--ground); border: 1px solid var(--rule); border-radius: 6px;
+  padding: 9px 11px; outline: none;
+}
+.kw-list { background: var(--panel); border: 1px solid var(--rule); border-radius: var(--r, 8px); overflow: hidden; }
+.kw-row { grid-template-columns: minmax(160px, 1fr) 2fr 72px; }
+.kw-meta { font: 11px var(--mono); color: var(--faint); }
+
+/* ---------------------------------------------------------------- urgent */
+.pill.urgent { border-color: var(--urgent-rule); color: var(--urgent); }
+.pill.junk { border-color: var(--junk-rule); color: var(--junk); }
+.urgent-box {
+  border: 1px solid var(--urgent-rule); border-left: 3px solid var(--urgent);
+  border-radius: 8px; padding: 10px 12px; margin-bottom: 14px; background: var(--raise);
+}
+.urgent-label { font: 10px var(--mono); letter-spacing: .12em; color: var(--urgent); margin-bottom: 4px; }
+.urgent-why { font-size: 12.5px; color: var(--text); margin-bottom: 3px; }
+.urgent-mail { font: 11px var(--mono); color: var(--faint); margin-top: 4px; overflow-wrap: anywhere; }
+.urgent-sub { margin-top: 26px; }
+.rc-add { grid-template-columns: 2fr 1fr auto; }
+#page-knowledge .rc-add input {
+  background: var(--ground); border: 1px solid var(--rule); border-radius: 6px;
+  padding: 9px 11px; outline: none;
+}
+
+/* ---------------------------------------------------------------- review: compact history
+ * Similar tickets as a row of numbers; junk as a chip in the header. The
+ * detail lives in the viewer.
+ */
+.similar-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.similar-chip {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 3px;
+  padding: 8px 11px; border: 1px solid var(--rule); border-radius: 8px;
+  background: var(--panel); cursor: pointer; text-align: left;
+}
+.similar-chip:hover { border-color: var(--seal); background: var(--raise); }
+.similar-chip .similar-number { font: 12px var(--mono); color: var(--text); }
+.similar-where { font: 10.5px var(--mono); color: var(--faint); }
+.junk-chip { cursor: pointer; border-color: var(--junk-rule); color: var(--junk); }
+.junk-chip:hover { background: var(--raise); }
+
+/* the viewer */
+.ticket-view { display: grid; gap: 10px; }
+.tv-title { font-size: 16px; color: var(--text); margin: 0; }
+.tv-facts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.tv-dates { font: 11px var(--mono); color: var(--faint); margin-left: 4px; }
+.tv-route { font: 12px var(--mono); color: var(--seal); }
+.tv-move { font-size: 12.5px; color: var(--text); display: flex; gap: 10px; align-items: baseline; }
+.tv-move-arrow { font: 11px var(--mono); color: var(--dim); white-space: nowrap; }
+.tv-summary { font-size: 13px; line-height: 1.55; color: var(--text); margin: 0; }
+.tv-steps { margin: 0; padding-left: 20px; display: grid; gap: 5px; font-size: 12.5px; color: var(--text); }
+.tv-steps .chip { margin-right: 4px; }
+.tv-msg { border: 1px solid var(--rule); border-radius: 8px; padding: 9px 12px; background: var(--ground); }
+.tv-msg.tv-note { border-style: dashed; }
+.tv-msg.tv-customer { border-left: 3px solid var(--seal); }
+.tv-msg-head { display: flex; gap: 10px; align-items: baseline; margin-bottom: 5px; flex-wrap: wrap; }
+.tv-kind { font: 10px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--dim); }
+.tv-from { font-size: 12px; color: var(--text); }
+.tv-at { font: 10.5px var(--mono); color: var(--faint); margin-left: auto; }
+.tv-text { font-size: 12.5px; line-height: 1.55; color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
+.tv-arrival { font: 11px var(--mono); color: var(--seal); padding: 2px 4px; }
+.junk-match-row {
+  display: grid; grid-template-columns: auto auto 1fr; gap: 10px; align-items: baseline;
+  padding: 8px 10px; border: 1px solid var(--rule); border-radius: 8px;
+  background: var(--ground); cursor: pointer; text-align: left;
+}
+.junk-match-row:hover { border-color: var(--seal); }
+.rc-who { display: grid; gap: 2px; }
+.rc-name { font-size: 12.5px; color: var(--text); }
+.rc-email { font: 11.5px var(--mono); color: var(--dim); }
+
+/* similar tickets: number and similarity, one per line */
+.similar-list {
+  display: grid; border: 1px solid var(--rule); border-radius: 8px;
+  overflow: hidden; background: var(--panel); max-width: 360px;
+}
+.similar-line {
+  display: flex; justify-content: space-between; align-items: baseline;
+  padding: 8px 12px; border-bottom: 1px solid var(--rule-soft);
+  background: none; cursor: pointer; text-align: left;
+}
+.similar-line:last-child { border-bottom: none; }
+.similar-line:hover { background: var(--raise); }
+.similar-line .similar-number { font: 12px var(--mono); color: var(--text); }
+.similar-score { font: 11.5px var(--mono); color: var(--seal); }
+
+/* ---------------------------------------------------------------- light theme
+ * The same two anchors, flipped: cream is the ground and near-black the text.
+ * Every shade is re-derived from them; the accents are darkened so they keep
+ * their contrast on cream. Nothing else in this file needs to know which
+ * theme is on -- it all reads these variables.
+ */
+[data-theme="light"] {
+  --ground:    #f8f6ef;   /* the cream, now the ground */
+  --panel:     #f2efe6;
+  --raise:     #ebe7dc;
+  --hover:     #e4dfd2;
+  --rule:      #d6d1c2;
+  --rule-soft: #e5e1d5;
+
+  --text:      #161616;   /* the near-black, now the text */
+  --dim:       #45433c;
+  --faint:     #7a776c;
+
+  --seal:      #5b7043;   /* sage, darkened for cream */
+  --seal-rgb:  91, 112, 67;
+  --amber:     #94703a;
+  --violet:    #6d5e63;
+  --rose:      #9c4d42;
+  --slate:     #6b695f;
+  --urgent:      #a8432c;
+  --urgent-rule: #d9a596;
+  --junk:        #8a6420;
+  --junk-rule:   #d8c28f;
+  --scroll:      #cfc9b8;
+
+  --shadow: 0 1px 0 rgba(255,255,255,.6) inset, 0 8px 24px -16px rgba(60,50,30,.25);
+  color-scheme: light;
+}
+
+.theme-toggle {
+  font: 11px var(--mono);
+  color: var(--dim);
+  background: none;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 4px 6px;
+  cursor: pointer;
+}
+.theme-toggle:hover { color: var(--text); border-color: var(--faint); }
+
+/* Arabic in a list cell lines up with the Latin rows, instead of drifting to
+   the middle of a wide column. */
+.kw-row .cfg-value, .rc-name { text-align: left; unicode-bidi: plaintext; }
+
+/* The logo follows the theme: white on dark, black on light. Both images are
+   in the page; this decides which one shows, before the first paint. */
+.logo-on-light { display: none !important; }
+[data-theme="light"] .logo-on-dark { display: none !important; }
+[data-theme="light"] .logo-on-light { display: block !important; }
+
+/* ---------------------------------------------------------------- light theme: filled tags
+ * On cream, a thin outline in a muted colour disappears. In light mode the
+ * tags that carry a state -- the decision, the confidence, urgent, junk --
+ * are filled with their colour instead, cream text on top. Dark mode keeps
+ * its outlines, which read well on the dark ground.
+ */
+[data-theme="light"] .pill.answer,
+[data-theme="light"] .detail-head .chip.answer { background: var(--seal); border-color: var(--seal); color: var(--ground); }
+[data-theme="light"] .pill.ask_more,
+[data-theme="light"] .detail-head .chip.ask_more { background: var(--amber); border-color: var(--amber); color: var(--ground); }
+[data-theme="light"] .pill.route,
+[data-theme="light"] .detail-head .chip.route { background: var(--violet); border-color: var(--violet); color: var(--ground); }
+[data-theme="light"] .pill.low,
+[data-theme="light"] .detail-head .chip.low { background: var(--rose); border-color: var(--rose); color: var(--ground); }
+[data-theme="light"] .pill.medium,
+[data-theme="light"] .detail-head .chip.medium { background: var(--amber); border-color: var(--amber); color: var(--ground); }
+[data-theme="light"] .pill.high,
+[data-theme="light"] .detail-head .chip.high { background: var(--seal); border-color: var(--seal); color: var(--ground); }
+[data-theme="light"] .pill.urgent,
+[data-theme="light"] .detail-head .chip.urgent { background: var(--urgent); border-color: var(--urgent); color: var(--ground); }
+[data-theme="light"] .pill.junk,
+[data-theme="light"] .detail-head .chip.junk { background: var(--junk); border-color: var(--junk); color: var(--ground); }
+[data-theme="light"] .junk-chip { background: var(--junk); border-color: var(--junk); color: var(--ground); }
+[data-theme="light"] .detail-head .chip-key,
+[data-theme="light"] .junk-chip .chip-key { opacity: .8; }
+[data-theme="light"] .pill { font-weight: 600; }
+
+/* the agent's trace in the Tables row view: numbered steps */
+.trace-list { list-style: decimal; padding-left: 22px; display: grid; gap: 4px; }
+.trace-list li { overflow-wrap: anywhere; }
+
+/* ---------------------------------------------------------------- configuration: how to choose */
+.cfg-guidance { margin: 6px 0 18px; }
+.cfg-guidance-text {
+  width: 100%; box-sizing: border-box; resize: vertical;
+  font: 12.5px/1.6 var(--sans, inherit); color: var(--text);
+  background: var(--panel); border: 1px solid var(--rule); border-radius: 8px;
+  padding: 10px 12px; outline: none;
+}
+.cfg-guidance-text:focus { border-color: var(--seal); }
+.cfg-missing {
+  font-size: 12.5px; color: var(--junk);
+  border: 1px solid var(--junk-rule); border-radius: 6px;
+  padding: 8px 12px; margin-bottom: 12px;
+}
+.cfg-row.missing .cfg-desc { border-color: var(--junk); }
+
+/* descriptions wrap and grow with their text */
+textarea.cfg-desc {
+  resize: none; overflow: hidden; min-height: 0; line-height: 1.5;
+  font: inherit; font-size: 12.5px; color: var(--text);
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.cfg-row { align-items: start; }
+
+/* change password */
+.pw-form { display: grid; gap: 12px; max-width: 380px; }
+.pw-field { display: grid; gap: 4px; font-size: 12px; color: var(--dim); }
+.pw-field input {
+  font: inherit; font-size: 14px; color: var(--text); background: var(--panel);
+  border: 1px solid var(--rule); border-radius: 6px; padding: 8px 10px; outline: none;
+}
+.pw-field input:focus { border-color: var(--seal); }
+.pw-form .btn { justify-self: start; }
