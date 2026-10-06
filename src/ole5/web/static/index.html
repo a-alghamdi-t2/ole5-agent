@@ -33,6 +33,7 @@
     <label>Email<input type="email" id="gate-email" required autocomplete="username"></label>
     <label>Password<input type="password" id="gate-password" required autocomplete="current-password"></label>
     <label id="gate-name-row" hidden>Name<input type="text" id="gate-name" autocomplete="name" dir="auto"></label>
+    <label id="gate-code-row" hidden>Code from the email<input type="text" id="gate-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}"></label>
 
     <div class="gate-error" id="gate-error" hidden></div>
     <button type="submit" id="gate-submit">Sign in</button>

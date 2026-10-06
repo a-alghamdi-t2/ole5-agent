@@ -89,6 +89,115 @@ def register(email: str, password: str, display_name: str | None = None) -> int:
     return row["id"]
 
 
+# ---------------------------------------------------------------------------
+# sign-up, confirmed by a code sent to the address
+# ---------------------------------------------------------------------------
+
+CODE_MINUTES = 15
+CODE_TRIES = 5
+RESEND_SECONDS = 60
+
+
+def _code_hash(email: str, code: str) -> str:
+    import hashlib
+    import hmac
+
+    from ole5.config import get_settings
+
+    secret = get_settings().session_secret
+    key = (secret.get_secret_value() if secret else "ole5-signup").encode()
+    return hmac.new(key, f"{email}|{code}".encode(), hashlib.sha256).hexdigest()
+
+
+def start_signup(email: str, password: str, display_name: str | None = None) -> None:
+    """Check the request, store it, and email a 6-digit code to the address.
+    The account does not exist until finish_signup is given that code."""
+    import secrets
+
+    from ole5.notify import mail
+
+    email = (email or "").strip().lower()
+    if not may_register(email):
+        raise AuthError("this address cannot create an account here; ask an administrator")
+    if len(password or "") < 8:
+        raise AuthError("the password must be at least 8 characters")
+    if postgres.query_one("SELECT id FROM reviewers WHERE email = %s", (email,)):
+        raise AuthError("that email is already registered")
+    recent = postgres.query_one(
+        "SELECT 1 AS x FROM signup_codes WHERE email = %s "
+        "AND created_at > now() - make_interval(secs => %s)", (email, RESEND_SECONDS))
+    if recent:
+        raise AuthError("a code was just sent to this address; wait a minute before asking again")
+
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    postgres.execute(
+        """
+        INSERT INTO signup_codes (email, code_hash, password_hash, display_name, expires_at)
+        VALUES (%s, %s, %s, %s, now() + make_interval(mins => %s))
+        ON CONFLICT (email) DO UPDATE SET
+            code_hash = EXCLUDED.code_hash, password_hash = EXCLUDED.password_hash,
+            display_name = EXCLUDED.display_name, attempts = 0,
+            expires_at = EXCLUDED.expires_at, created_at = now()
+        """,
+        (email, _code_hash(email, code), hash_password(password),
+         (display_name or "").strip() or None, CODE_MINUTES),
+    )
+    body = (f"Your code to create a Support Agent account:\n\n    {code}\n\n"
+            f"It works for {CODE_MINUTES} minutes. If you did not ask for this, "
+            "ignore this email: no account is created without the code.")
+    try:
+        sent = mail.deliver(mail.compose(email, "Your Support Agent sign-up code", body))
+    except Exception as exc:
+        postgres.execute("DELETE FROM signup_codes WHERE email = %s", (email,))
+        log.exception("sign-up code not sent", extra={"email": email})
+        raise AuthError("the code could not be emailed; ask an administrator") from exc
+    if not sent:
+        # DRY_RUN: no email goes out. The code is in the server log, so an
+        # administrator can still finish a sign-up on a test setup.
+        log.warning("sign-up code not emailed (DRY_RUN)", extra={"email": email, "code": code})
+    log.info("sign-up code sent", extra={"email": email})
+
+
+def finish_signup(email: str, code: str) -> int:
+    """Create the account if the code is right. Returns the reviewer id."""
+    import hmac
+
+    email = (email or "").strip().lower()
+    row = postgres.query_one(
+        "SELECT code_hash, password_hash, display_name, attempts, expires_at < now() AS expired "
+        "FROM signup_codes WHERE email = %s", (email,))
+    if row is None:
+        raise AuthError("no code is waiting for this address; create the account again")
+    if row["expired"]:
+        raise AuthError("this code has expired; create the account again for a new one")
+    if row["attempts"] >= CODE_TRIES:
+        raise AuthError("too many wrong codes; create the account again for a new one")
+    if not hmac.compare_digest(row["code_hash"], _code_hash(email, (code or "").strip())):
+        postgres.execute("UPDATE signup_codes SET attempts = attempts + 1 WHERE email = %s", (email,))
+        raise AuthError("that code is not right")
+    if not may_register(email):
+        raise AuthError("this address cannot create an account here; ask an administrator")
+    if postgres.query_one("SELECT id FROM reviewers WHERE email = %s", (email,)):
+        raise AuthError("that email is already registered")
+    new = postgres.query_one(
+        "INSERT INTO reviewers (email, display_name, password_hash) VALUES (%s, %s, %s) RETURNING id",
+        (email, row["display_name"] or email.split("@")[0], row["password_hash"]))
+    postgres.execute("DELETE FROM signup_codes WHERE email = %s", (email,))
+    log.info("reviewer registered", extra={"email": email})
+    return new["id"]
+
+
+def session_for(reviewer_id: int) -> str:
+    """A new sign-in for a reviewer just created."""
+    token = secrets.token_urlsafe(32)
+    expires = datetime.now(UTC) + timedelta(hours=get_settings().session_hours)
+    postgres.execute(
+        "INSERT INTO sessions (token, reviewer_id, expires_at) VALUES (%s, %s, %s)",
+        (token, reviewer_id, expires),
+    )
+    return token
+
+
 def login(email: str, password: str) -> str:
     """Return a session token. Raises AuthError on bad credentials.
 
@@ -175,4 +284,4 @@ def require(ole5_session: str | None = Cookie(default=None, alias=COOKIE)) -> di
 def anyone_registered() -> bool:
     """False before the first sign-up, which is what opens the sign-up form."""
     row = postgres.query_one("SELECT count(*) AS n FROM reviewers")
-    return bool(row and row["n"])
+    return bool(row and row["n"])

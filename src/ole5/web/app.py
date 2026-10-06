@@ -148,22 +148,36 @@ async def login(response: Response, email: str = Form(...),
 
 
 @app.post("/api/register")
-async def register(response: Response, email: str = Form(...),
-                   password: str = Form(...),
+async def register(email: str = Form(...), password: str = Form(...),
                    display_name: str = Form(default="")) -> dict:
-    """Open sign-up.
-
-    Anyone reaching the console can create an account and approve drafts. That
-    is fine while the console is on a laptop and the only reviewer is us; it is
-    not fine the day it has a URL other people can reach, and closing it then
-    is a deliberate decision rather than something to discover.
-    """
+    """Step 1 of sign-up: email a 6-digit code to the address. No account is
+    created yet -- a mistyped or invented address never gets past this."""
     try:
-        await run_in_threadpool(auth.register, email, password,
-                                display_name or None)
+        await run_in_threadpool(auth.start_signup, email, password, display_name or None)
     except auth.AuthError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
-    return await login(response, email=email, password=password)
+    return {"code_sent": True, "email": email.strip().lower()}
+
+
+@app.post("/api/register/verify")
+async def register_verify(response: Response, email: str = Form(...),
+                          code: str = Form(...)) -> dict:
+    """Step 2: the code from the email creates the account and signs in."""
+    try:
+        reviewer_id = await run_in_threadpool(auth.finish_signup, email, code)
+        token = await run_in_threadpool(auth.session_for, reviewer_id)
+    except auth.AuthError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    audit.record(actor="reviewer", action="registered", reasoning=email.strip().lower(),
+                 evidence={"reviewer_id": reviewer_id, "confirmed_by": "email code"})
+    settings = get_settings()
+    response.set_cookie(
+        auth.COOKIE, token, httponly=True, samesite="lax",
+        max_age=settings.session_hours * 3600,
+        secure=settings.env == "prod",
+    )
+    reviewer = await run_in_threadpool(auth.reviewer_for, token)
+    return {"reviewer": reviewer}
 
 
 @app.post("/api/password")
