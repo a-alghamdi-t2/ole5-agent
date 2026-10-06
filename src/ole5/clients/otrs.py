@@ -159,6 +159,23 @@ class OtrsClient:
         return self.search(queues=[s.otrs_intake_queue],
                            states=states or ["new"], limit=limit)
 
+    def whereabouts(self, ticket_id: str) -> dict:
+        """The ticket's queue, state and state type as OTRS has them now."""
+        t = self._call("TicketGet", {"TicketID": str(ticket_id)})["Ticket"][0]
+        return {"queue": t.get("Queue") or "", "state": t.get("State") or "",
+                "state_type": t.get("StateType") or ""}
+
+    @staticmethod
+    def left_intake(where: dict) -> str | None:
+        """Why a ticket is no longer ours to decide, or None if it still is:
+        moved out of the intake queue, or closed, merged or removed there."""
+        s = get_settings()
+        if where["queue"] != s.otrs_intake_queue:
+            return f"moved to {where['queue']} in OTRS"
+        if where["state_type"] in ("closed", "merged", "removed"):
+            return f"set to {where['state']} in OTRS"
+        return None
+
     # ---- writing -------------------------------------------------------
 
     def apply_decision(
@@ -289,4 +306,4 @@ def reachable() -> tuple[bool, str]:
     except OtrsNotConfigured as exc:
         return False, str(exc)
     except Exception as exc:
-        return False, f"{type(exc).__name__}: {exc}"
+        return False, f"{type(exc).__name__}: {exc}"

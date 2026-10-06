@@ -163,8 +163,9 @@ docker compose exec ole5 python scripts/<name>.py <command>
 | `weekly.py` | Check, run, or view the weekly update (`status`, `run`, `show 3`) |
 | `junk.py` | The junk index (`status`, `sync`, `calibrate`) |
 | `similar.py` | The similar tickets index (`status`, `sync`) |
-| `reset_password.py` | Give someone a temporary password if they forgot theirs |
+| `reset_password.py` | Give someone a temporary password. Normally not needed: "Forgot your password?" on the sign-in page emails a code. This is for when email is not working |
 | `otrs_probe.py` | See what is waiting in the Support queue |
+| `mail_test.py` | Send one test email with the mail settings in `.env`, and see why it fails if it does (`mail_test.py someone@t2.sa`) |
 | `search_text.py`, `export_timelines.py`, `extract_journeys.py`, `extract_scopes.py` | Rebuild parts of the history. Only needed if the cleaning rules or prompts change |
 
 ## Backups

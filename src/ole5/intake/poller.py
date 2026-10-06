@@ -99,6 +99,12 @@ def poll_once(*, limit: int | None = None, decide: bool = True) -> PollResult:
         result.seen = len(ids)
         log.info("polled", extra={"waiting": len(ids)})
 
+        # A full pass also catches tickets someone handled in OTRS while their
+        # draft waited for review. A limited pass may not list every waiting
+        # ticket, so it cannot tell "moved" from "not listed".
+        if limit is None:
+            withdraw_moved(otrs, set(ids))
+
         for otrs_id in ids:
             try:
                 ticket = otrs.get(otrs_id)
@@ -189,3 +195,47 @@ def _trace_summary(steps: list) -> str:
         elif kind == "validated" and st.get("corrections"):
             words.append(f"{len(st['corrections'])} corrected")
     return ", ".join(words) or "decided without searching"
+
+
+def withdraw_moved(otrs, waiting: set[str]) -> int:
+    """Withdraw pending drafts whose ticket left the intake queue in OTRS.
+
+    Someone may move a ticket out of Support, or close it, after the agent
+    drafted it. Approving that draft would write over what they did. So each
+    pass checks the pending drafts whose ticket is no longer waiting, and
+    withdraws those that left: the draft leaves the Review page and the audit
+    log says why. A ticket still in Support (only its state changed) stays.
+    """
+    rows = postgres.query(
+        """
+        SELECT d.id AS draft_id, t.id AS ticket_id, t.otrs_ticket_id, t.ticket_number
+        FROM drafts d JOIN tickets t ON t.id = d.ticket_id
+        WHERE d.status = 'pending'
+        """)
+    withdrawn = 0
+    for r in rows:
+        if r["otrs_ticket_id"] in waiting:
+            continue
+        try:
+            where = otrs.whereabouts(r["otrs_ticket_id"])
+        except OtrsError as exc:
+            log.warning("could not check a pending draft's ticket",
+                        extra={"ticket": r["ticket_number"], "error": str(exc)[:200]})
+            continue
+        why = otrs.left_intake(where)
+        if why is None:
+            continue
+        changed = postgres.execute(
+            "UPDATE drafts SET status = 'superseded' WHERE id = %s AND status = 'pending'",
+            (r["draft_id"],))
+        if not changed:
+            continue          # reviewed in the meantime
+        postgres.execute("UPDATE tickets SET queue = %s, state = %s WHERE id = %s",
+                         (where["queue"], where["state"], r["ticket_id"]))
+        audit.record(actor="intake", action="withdrawn", ticket_id=r["ticket_id"],
+                     draft_id=r["draft_id"],
+                     reasoning=f"draft withdrawn: the ticket was {why} before review",
+                     evidence=where)
+        log.info("draft withdrawn", extra={"ticket": r["ticket_number"], "why": why})
+        withdrawn += 1
+    return withdrawn

@@ -180,19 +180,37 @@ async def register_verify(response: Response, email: str = Form(...),
     return {"reviewer": reviewer}
 
 
-@app.post("/api/password")
-async def change_password(payload: dict, request: Request,
-                          reviewer: dict = Depends(auth.require)) -> dict:
-    """Change your own password. Other sign-ins end; this one stays."""
+@app.post("/api/password/forgot")
+async def password_forgot(email: str = Form(...)) -> dict:
+    """Step 1 of a reset: email a code if the address has an account. The same
+    answer either way, so the form cannot reveal who has one."""
     try:
-        await run_in_threadpool(auth.change_password, reviewer["id"],
-                                payload.get("current") or "", payload.get("new") or "",
-                                request.cookies.get(auth.COOKIE))
+        await run_in_threadpool(auth.start_reset, email)
     except auth.AuthError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
-    audit.record(actor="reviewer", action="password_changed",
-                 reasoning=reviewer.get("email"), evidence={"reviewer_id": reviewer["id"]})
-    return {"changed": True}
+    return {"code_sent": True}
+
+
+@app.post("/api/password/reset")
+async def password_reset(response: Response, email: str = Form(...), code: str = Form(...),
+                         new_password: str = Form(...)) -> dict:
+    """Step 2: the code and a new password. Every other sign-in ends; this
+    browser is signed in."""
+    try:
+        reviewer_id = await run_in_threadpool(auth.finish_reset, email, code, new_password)
+        token = await run_in_threadpool(auth.session_for, reviewer_id)
+    except auth.AuthError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    audit.record(actor="reviewer", action="password_reset", reasoning=email.strip().lower(),
+                 evidence={"reviewer_id": reviewer_id, "confirmed_by": "email code"})
+    settings = get_settings()
+    response.set_cookie(
+        auth.COOKIE, token, httponly=True, samesite="lax",
+        max_age=settings.session_hours * 3600,
+        secure=settings.env == "prod",
+    )
+    reviewer = await run_in_threadpool(auth.reviewer_for, token)
+    return {"reviewer": reviewer}
 
 
 @app.post("/api/logout")

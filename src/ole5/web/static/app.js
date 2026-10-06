@@ -304,100 +304,84 @@ function showGate(anyoneRegistered = true) {
   paintGate();
 }
 
-// Three modes: login, register, and verify (the code emailed on register).
+// Five screens on one card:
+//   login     email + password
+//   register  email + password + name          -> a code is emailed
+//   verify    the code from the email          -> account created, signed in
+//   forgot    email                            -> a code is emailed
+//   reset     the code + a new password, twice -> password changed, signed in
+const GATE = {
+  login:    { sub: () => "Sign in to review drafts.", submit: "Sign in",
+              toggle: "Create an account", fields: ["password"] },
+  register: { sub: () => "Create an account to review drafts.", submit: "Create account",
+              toggle: "I already have an account", fields: ["password", "name"] },
+  verify:   { sub: () => `We emailed a 6-digit code to ${$("gate-email").value}. Enter it to create the account.`,
+              submit: "Confirm", toggle: "Back", fields: ["code"], lockEmail: true },
+  forgot:   { sub: () => "Enter your email and we will send you a code to reset your password.",
+              submit: "Send code", toggle: "Back to sign in", fields: [] },
+  reset:    { sub: () => `If ${$("gate-email").value} has an account, a 6-digit code is on its way. Enter it with a new password.`,
+              submit: "Reset password", toggle: "Back to sign in", fields: ["code", "new", "new2"], lockEmail: true },
+};
+
 function paintGate() {
-  const signup = gateMode === "register";
-  const verify = gateMode === "verify";
-  $("gate-sub").textContent = verify
-    ? `We emailed a 6-digit code to ${$("gate-email").value}. Enter it to create the account.`
-    : signup ? "Create an account to review drafts." : "Sign in to review drafts.";
-  $("gate-submit").textContent = verify ? "Confirm" : signup ? "Create account" : "Sign in";
-  $("gate-toggle").textContent = verify
-    ? "Back"
-    : signup ? "I already have an account" : "Create an account";
-  $("gate-name-row").hidden = !signup;
-  $("gate-code-row").hidden = !verify;
-  $("gate-code").required = verify;
-  $("gate-email").readOnly = verify;
-  $("gate-password").closest("label").hidden = verify;
-  $("gate-password").required = !verify;
-  $("gate-password").autocomplete = signup ? "new-password" : "current-password";
+  const g = GATE[gateMode];
+  $("gate-sub").textContent = g.sub();
+  $("gate-submit").textContent = g.submit;
+  $("gate-toggle").textContent = g.toggle;
+  for (const f of ["password", "name", "code", "new", "new2"]) {
+    const on = g.fields.includes(f);
+    $(`gate-${f}-row`).hidden = !on;
+    $(`gate-${f === "password" ? "password" : f}`).required = on && f !== "name";
+  }
+  $("gate-email").readOnly = !!g.lockEmail;
+  $("gate-forgot").hidden = gateMode !== "login";
+  $("gate-password").autocomplete = gateMode === "register" ? "new-password" : "current-password";
   $("gate-error").hidden = true;
-  if (verify) { $("gate-code").value = ""; $("gate-code").focus(); }
+  for (const f of ["code", "new", "new2"]) $(`gate-${f}`).value = "";
+  if (g.fields.includes("code")) $("gate-code").focus();
 }
 
 $("gate-toggle").addEventListener("click", () => {
-  gateMode = gateMode === "verify" ? "register" : gateMode === "login" ? "register" : "login";
+  gateMode = { login: "register", register: "login", verify: "register",
+               forgot: "login", reset: "login" }[gateMode];
+  paintGate();
+});
+
+$("gate-forgot").addEventListener("click", () => {
+  gateMode = "forgot";
   paintGate();
 });
 
 $("gate-form").addEventListener("submit", async (e) => {
   e.preventDefault();
+  const email = $("gate-email").value;
+  const post = (url, fields) =>
+    api(url, { method: "POST", body: new URLSearchParams({ email, ...fields }) });
+  const signedIn = async (out) => { state.reviewer = out.reviewer; await start(); };
   try {
-    if (gateMode === "verify") {
-      const out = await api("/api/register/verify", { method: "POST", body: new URLSearchParams({
-        email: $("gate-email").value, code: $("gate-code").value.trim() }) });
-      state.reviewer = out.reviewer;
-      await start();
-      return;
+    if (gateMode === "login") {
+      await signedIn(await post("/api/login", { password: $("gate-password").value }));
+    } else if (gateMode === "register") {
+      await post("/api/register", { password: $("gate-password").value,
+                                     display_name: $("gate-name").value });
+      gateMode = "verify"; paintGate();
+    } else if (gateMode === "verify") {
+      await signedIn(await post("/api/register/verify", { code: $("gate-code").value.trim() }));
+    } else if (gateMode === "forgot") {
+      await post("/api/password/forgot", {});
+      gateMode = "reset"; paintGate();
+    } else if (gateMode === "reset") {
+      if ($("gate-new").value !== $("gate-new2").value) {
+        throw new Error("The two new passwords do not match.");
+      }
+      await signedIn(await post("/api/password/reset", { code: $("gate-code").value.trim(),
+                                                          new_password: $("gate-new").value }));
+      toast("Password changed. You are signed out on every other device.", "good");
     }
-    const body = new URLSearchParams({
-      email: $("gate-email").value,
-      password: $("gate-password").value,
-    });
-    if (gateMode === "register") {
-      body.set("display_name", $("gate-name").value);
-      await api("/api/register", { method: "POST", body });
-      gateMode = "verify";
-      paintGate();
-      return;
-    }
-    const out = await api("/api/login", { method: "POST", body });
-    state.reviewer = out.reviewer;
-    await start();
   } catch (err) {
     $("gate-error").textContent = err.message;
     $("gate-error").hidden = false;
   }
-});
-
-// Change password: current, new, and the new one again. Uses the shared
-// overlay. Other sign-ins end when it changes; this one stays.
-$("password-open").addEventListener("click", () => {
-  const form = el("div", "pw-form");
-  const field = (label, name, ac) => {
-    const wrap = el("label", "pw-field");
-    const input = el("input");
-    input.type = "password"; input.name = name; input.autocomplete = ac;
-    wrap.append(el("span", null, label), input);
-    form.append(wrap);
-    return input;
-  };
-  const current = field("Current password", "current", "current-password");
-  const fresh = field("New password (at least 8 characters)", "new", "new-password");
-  const again = field("New password again", "again", "new-password");
-  const save = el("button", "btn approve", "Change password");
-  const note = el("p", "cfg-hint", "Signs you out on every other device.");
-  form.append(save, note);
-  save.addEventListener("click", async () => {
-    if (!current.value || !fresh.value) { toast("Fill in all three", "bad"); return; }
-    if (fresh.value !== again.value) { toast("The new passwords do not match", "bad"); again.focus(); return; }
-    try {
-      await api("/api/password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ current: current.value, new: fresh.value }),
-      });
-      $("inspector").hidden = true;
-      toast("Password changed", "good");
-    } catch (err) {
-      toast(err.message, "bad");
-    }
-  });
-  $("inspector-title").textContent = "Change password";
-  $("inspector-body").replaceChildren(form);
-  $("inspector").hidden = false;
-  current.focus();
 });
 
 $("sign-out").addEventListener("click", async () => {
