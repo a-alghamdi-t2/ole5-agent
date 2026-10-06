@@ -145,7 +145,7 @@ Database changes in `migrations/` are applied by themselves when the app starts.
 | `GROQ_API_KEY` | The key for the AI models |
 | `SMTP_*`, `MAIL_*` | The mail server for urgent emails and the weekly report |
 | `CONSOLE_URL` | The console's address. The emails link to it |
-| `REGISTRATION_ALLOWLIST` | Who can create an account, for example `@t2.sa` |
+| `REGISTRATION_ALLOWLIST` | Who can create an account, for example `@t2.sa`. A new account is only created after a 6-digit code emailed to the address is entered, so the mail settings must work for sign-up |
 | `WEEKLY_REPORT_RECIPIENTS` | Who gets the weekly report, separated by commas |
 | `DRY_RUN` | `true` means nothing is written to OTRS and no emails are sent |
 | `PIP_EXTRA_INDEX_URL` | Where the build downloads the private RAGent2 package from. Needed to build |

@@ -304,38 +304,55 @@ function showGate(anyoneRegistered = true) {
   paintGate();
 }
 
+// Three modes: login, register, and verify (the code emailed on register).
 function paintGate() {
   const signup = gateMode === "register";
-  $("gate-sub").textContent = signup
-    ? "Create an account to review drafts."
-    : "Sign in to review drafts.";
-  $("gate-submit").textContent = signup ? "Create account" : "Sign in";
-  $("gate-toggle").textContent = signup
-    ? "I already have an account"
-    : "Create an account";
+  const verify = gateMode === "verify";
+  $("gate-sub").textContent = verify
+    ? `We emailed a 6-digit code to ${$("gate-email").value}. Enter it to create the account.`
+    : signup ? "Create an account to review drafts." : "Sign in to review drafts.";
+  $("gate-submit").textContent = verify ? "Confirm" : signup ? "Create account" : "Sign in";
+  $("gate-toggle").textContent = verify
+    ? "Back"
+    : signup ? "I already have an account" : "Create an account";
   $("gate-name-row").hidden = !signup;
+  $("gate-code-row").hidden = !verify;
+  $("gate-code").required = verify;
+  $("gate-email").readOnly = verify;
+  $("gate-password").closest("label").hidden = verify;
+  $("gate-password").required = !verify;
   $("gate-password").autocomplete = signup ? "new-password" : "current-password";
   $("gate-error").hidden = true;
+  if (verify) { $("gate-code").value = ""; $("gate-code").focus(); }
 }
 
 $("gate-toggle").addEventListener("click", () => {
-  gateMode = gateMode === "login" ? "register" : "login";
+  gateMode = gateMode === "verify" ? "register" : gateMode === "login" ? "register" : "login";
   paintGate();
 });
 
 $("gate-form").addEventListener("submit", async (e) => {
   e.preventDefault();
-  const body = new URLSearchParams({
-    email: $("gate-email").value,
-    password: $("gate-password").value,
-  });
-  if (gateMode === "register") body.set("display_name", $("gate-name").value);
-
   try {
-    const out = await api(
-      gateMode === "register" ? "/api/register" : "/api/login",
-      { method: "POST", body }
-    );
+    if (gateMode === "verify") {
+      const out = await api("/api/register/verify", { method: "POST", body: new URLSearchParams({
+        email: $("gate-email").value, code: $("gate-code").value.trim() }) });
+      state.reviewer = out.reviewer;
+      await start();
+      return;
+    }
+    const body = new URLSearchParams({
+      email: $("gate-email").value,
+      password: $("gate-password").value,
+    });
+    if (gateMode === "register") {
+      body.set("display_name", $("gate-name").value);
+      await api("/api/register", { method: "POST", body });
+      gateMode = "verify";
+      paintGate();
+      return;
+    }
+    const out = await api("/api/login", { method: "POST", body });
     state.reviewer = out.reviewer;
     await start();
   } catch (err) {
