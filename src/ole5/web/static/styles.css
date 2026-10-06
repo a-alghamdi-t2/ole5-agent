@@ -1863,12 +1863,4 @@ textarea.cfg-desc {
 }
 .cfg-row { align-items: start; }
 
-/* change password */
-.pw-form { display: grid; gap: 12px; max-width: 380px; }
-.pw-field { display: grid; gap: 4px; font-size: 12px; color: var(--dim); }
-.pw-field input {
-  font: inherit; font-size: 14px; color: var(--text); background: var(--panel);
-  border: 1px solid var(--rule); border-radius: 6px; padding: 8px 10px; outline: none;
-}
-.pw-field input:focus { border-color: var(--seal); }
-.pw-form .btn { justify-self: start; }
+

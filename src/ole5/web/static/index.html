@@ -31,13 +31,16 @@
     <p class="gate-sub" id="gate-sub">Sign in to review drafts.</p>
 
     <label>Email<input type="email" id="gate-email" required autocomplete="username"></label>
-    <label>Password<input type="password" id="gate-password" required autocomplete="current-password"></label>
+    <label id="gate-password-row">Password<input type="password" id="gate-password" required autocomplete="current-password"></label>
     <label id="gate-name-row" hidden>Name<input type="text" id="gate-name" autocomplete="name" dir="auto"></label>
     <label id="gate-code-row" hidden>Code from the email<input type="text" id="gate-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}"></label>
+    <label id="gate-new-row" hidden>New password (at least 8 characters)<input type="password" id="gate-new" autocomplete="new-password"></label>
+    <label id="gate-new2-row" hidden>New password again<input type="password" id="gate-new2" autocomplete="new-password"></label>
 
     <div class="gate-error" id="gate-error" hidden></div>
     <button type="submit" id="gate-submit">Sign in</button>
     <button type="button" class="link" id="gate-toggle">Create an account</button>
+    <button type="button" class="link" id="gate-forgot">Forgot your password?</button>
   </form>
 </div>
 
@@ -61,7 +64,6 @@
       <button class="theme-toggle" id="theme-toggle" title="Switch between dark and light"></button>
       <button class="theme-toggle" id="sound-toggle" title="A sound when a new draft arrives"></button>
       <button class="kbd" id="shortcuts-open" title="Keyboard shortcuts (?)">?</button>
-      <button class="link" id="password-open">Change password</button>
       <button class="link" id="sign-out">Sign out</button>
     </div>
   </nav>

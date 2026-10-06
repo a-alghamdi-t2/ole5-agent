@@ -145,16 +145,15 @@ def start_signup(email: str, password: str, display_name: str | None = None) -> 
     body = (f"Your code to create a Support Agent account:\n\n    {code}\n\n"
             f"It works for {CODE_MINUTES} minutes. If you did not ask for this, "
             "ignore this email: no account is created without the code.")
+    # Sent even under DRY_RUN: that setting keeps tickets and alerts quiet, but
+    # a sign-up that silently emails nothing only looks broken.
     try:
-        sent = mail.deliver(mail.compose(email, "Your Support Agent sign-up code", body))
+        mail.deliver(mail.compose(email, "Your Support Agent sign-up code", body),
+                     ignore_dry_run=True)
     except Exception as exc:
         postgres.execute("DELETE FROM signup_codes WHERE email = %s", (email,))
         log.exception("sign-up code not sent", extra={"email": email})
         raise AuthError("the code could not be emailed; ask an administrator") from exc
-    if not sent:
-        # DRY_RUN: no email goes out. The code is in the server log, so an
-        # administrator can still finish a sign-up on a test setup.
-        log.warning("sign-up code not emailed (DRY_RUN)", extra={"email": email, "code": code})
     log.info("sign-up code sent", extra={"email": email})
 
 
@@ -185,6 +184,82 @@ def finish_signup(email: str, code: str) -> int:
     postgres.execute("DELETE FROM signup_codes WHERE email = %s", (email,))
     log.info("reviewer registered", extra={"email": email})
     return new["id"]
+
+
+# ---------------------------------------------------------------------------
+# forgot password, confirmed by a code sent to the address
+# ---------------------------------------------------------------------------
+
+def start_reset(email: str) -> None:
+    """Email a 6-digit reset code if the address has an account. Says nothing
+    either way: the caller answers the same, so this cannot reveal who has an
+    account."""
+    import secrets as _s
+
+    from ole5.notify import mail
+
+    email = (email or "").strip().lower()
+    row = postgres.query_one("SELECT id, is_active FROM reviewers WHERE email = %s", (email,))
+    if row is None or not row["is_active"]:
+        log.info("reset asked for an address with no active account", extra={"email": email})
+        return
+    if postgres.query_one(
+            "SELECT 1 AS x FROM reset_codes WHERE email = %s "
+            "AND created_at > now() - make_interval(secs => %s)", (email, RESEND_SECONDS)):
+        # Quietly: an error here would tell a stranger this address has an account.
+        log.info("reset asked again within a minute; the first code stands", extra={"email": email})
+        return
+
+    code = f"{_s.randbelow(1_000_000):06d}"
+    postgres.execute(
+        """
+        INSERT INTO reset_codes (email, code_hash, expires_at)
+        VALUES (%s, %s, now() + make_interval(mins => %s))
+        ON CONFLICT (email) DO UPDATE SET code_hash = EXCLUDED.code_hash, attempts = 0,
+            expires_at = EXCLUDED.expires_at, created_at = now()
+        """,
+        (email, _code_hash(email, "reset|" + code), CODE_MINUTES),
+    )
+    body = (f"Your code to reset your Support Agent password:\n\n    {code}\n\n"
+            f"It works for {CODE_MINUTES} minutes. If you did not ask for this, ignore "
+            "this email: your password stays as it is without the code.")
+    try:
+        mail.deliver(mail.compose(email, "Your Support Agent password reset code", body),
+                     ignore_dry_run=True)
+    except Exception as exc:
+        postgres.execute("DELETE FROM reset_codes WHERE email = %s", (email,))
+        log.exception("reset code not sent", extra={"email": email})
+        raise AuthError("the code could not be emailed; ask an administrator") from exc
+    log.info("reset code sent", extra={"email": email})
+
+
+def finish_reset(email: str, code: str, new_password: str) -> int:
+    """Set the new password if the code is right, ending every sign-in.
+    Returns the reviewer id."""
+    import hmac
+
+    email = (email or "").strip().lower()
+    if len(new_password or "") < 8:
+        raise AuthError("the password must be at least 8 characters")
+    row = postgres.query_one(
+        "SELECT code_hash, attempts, expires_at < now() AS expired FROM reset_codes WHERE email = %s",
+        (email,))
+    if row is None:
+        raise AuthError("no code is waiting for this address; ask for a new one")
+    if row["expired"]:
+        raise AuthError("this code has expired; ask for a new one")
+    if row["attempts"] >= CODE_TRIES:
+        raise AuthError("too many wrong codes; ask for a new one")
+    if not hmac.compare_digest(row["code_hash"], _code_hash(email, "reset|" + (code or "").strip())):
+        postgres.execute("UPDATE reset_codes SET attempts = attempts + 1 WHERE email = %s", (email,))
+        raise AuthError("that code is not right")
+    who = postgres.query_one("SELECT id FROM reviewers WHERE email = %s AND is_active", (email,))
+    if who is None:
+        raise AuthError("this account is not active")
+    set_password(who["id"], new_password)          # also signs out everywhere
+    postgres.execute("DELETE FROM reset_codes WHERE email = %s", (email,))
+    log.info("password reset", extra={"reviewer": who["id"]})
+    return who["id"]
 
 
 def session_for(reviewer_id: int) -> str:
@@ -233,16 +308,6 @@ def set_password(reviewer_id: int, new: str, keep_token: str | None = None) -> N
                      (hash_password(new), reviewer_id))
     postgres.execute("DELETE FROM sessions WHERE reviewer_id = %s AND token IS DISTINCT FROM %s",
                      (reviewer_id, keep_token))
-
-
-def change_password(reviewer_id: int, current: str, new: str, keep_token: str | None) -> None:
-    """A signed-in reviewer changing their own password: the current one first."""
-    row = postgres.query_one("SELECT password_hash FROM reviewers WHERE id = %s", (reviewer_id,))
-    if row is None or not verify_password(current or "", row["password_hash"]):
-        raise AuthError("the current password is not right")
-    if current == new:
-        raise AuthError("the new password is the same as the current one")
-    set_password(reviewer_id, new, keep_token)
 
 
 def logout(token: str) -> None:

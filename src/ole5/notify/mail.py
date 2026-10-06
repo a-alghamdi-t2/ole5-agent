@@ -73,11 +73,15 @@ def compose(to_address: str, subject: str, body: str) -> EmailMessage:
     return msg
 
 
-def deliver(msg: EmailMessage) -> bool:
+def deliver(msg: EmailMessage, *, ignore_dry_run: bool = False, debug: bool = False) -> bool:
     """Send a composed message. True if sent, False under DRY_RUN.
-    Raises NotConfigured without a mail server, and SMTP errors as they come."""
+    Raises NotConfigured without a mail server, and SMTP errors as they come.
+
+    ignore_dry_run: for mail that is not about tickets -- a sign-up code has to
+    arrive even on a setup where nothing is written to OTRS. debug: print the
+    whole SMTP conversation (scripts/mail_test.py)."""
     s = get_settings()
-    if s.dry_run:
+    if s.dry_run and not ignore_dry_run:
         log.info("email suppressed by DRY_RUN", extra={"to": msg["To"], "subject": msg["Subject"]})
         return False
     if not s.smtp_host:
@@ -89,6 +93,8 @@ def deliver(msg: EmailMessage) -> bool:
                                               timeout=TIMEOUT, context=context)
     else:
         conn = smtplib.SMTP(s.smtp_host, s.smtp_port, timeout=TIMEOUT)
+    if debug:
+        conn.set_debuglevel(1)
     try:
         conn.ehlo()
         if s.smtp_port != 465:
@@ -96,7 +102,9 @@ def deliver(msg: EmailMessage) -> bool:
             conn.ehlo()  # STARTTLS resets the advertised feature list
         if s.mail_username and s.mail_password:
             conn.login(s.mail_username, s.mail_password.get_secret_value())
-        conn.send_message(msg)
+        refused = conn.send_message(msg)
+        if refused:
+            raise smtplib.SMTPRecipientsRefused(refused)
     finally:
         try:
             conn.quit()

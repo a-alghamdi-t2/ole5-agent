@@ -265,6 +265,27 @@ def send_pending(*, limit: int = 20) -> tuple[int, int]:
                                        similar=similar.for_note(row["draft_id"]),
                                        urgent=urgent.for_draft(row["draft_id"]),
                                        junk=junk.for_draft(row["draft_id"]))
+            # Last check before writing: if someone moved or closed the ticket
+            # in OTRS since the draft was made, writing now would undo their
+            # work. Nothing is written; the reason is recorded.
+            try:
+                where = otrs.whereabouts(row["otrs_ticket_id"])
+                why = otrs.left_intake(where)
+            except OtrsError:
+                why = None    # could not check: the write below reports any real error
+            if why:
+                postgres.execute(
+                    "UPDATE otrs_outbox SET status = 'failed', attempts = attempts + 1, "
+                    "last_error = %s WHERE id = %s",
+                    (f"not written: the ticket was {why} after the draft was made", row["id"]))
+                audit.record(actor="writer", action="not_written", draft_id=row["draft_id"],
+                             reasoning=f"the ticket was {why} after the draft was made; "
+                                       "nothing was written so their change stands",
+                             evidence=where)
+                log.warning("approval not written", extra={"ticket": row["ticket_number"], "why": why})
+                failed += 1
+                continue
+
             try:
                 article_id = otrs.apply_decision(
                     row["otrs_ticket_id"],
@@ -329,4 +350,4 @@ def send_pending(*, limit: int = 20) -> tuple[int, int]:
                                        "article": article_id})
             sent += 1
 
-    return sent, failed
+    return sent, failed
