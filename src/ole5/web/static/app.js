@@ -504,6 +504,24 @@ async function loadDrafts() {
   draftIds = drafts.map((d) => d.id);
   notePending(drafts);
 
+  // The open draft left the list: someone reviewed it, a new message replaced
+  // it, or its ticket was moved or closed in OTRS. Checked before anything
+  // else, so it also clears when the list is now empty.
+  let vanished = false;
+  if (state.draftId && !drafts.some((d) => d.id === state.draftId)) {
+    vanished = true;
+    state.draftId = null;
+    state.draft = null;
+    state.edits = {};
+    if (location.hash.startsWith("#draft-")) history.replaceState(null, "", location.pathname);
+    const gone = el("div", "empty");
+    gone.append(
+      el("strong", null, "That draft is gone"),
+      el("span", null, "It was reviewed, replaced by a newer message, or its ticket was moved or closed in OTRS.")
+    );
+    $("draft-detail").replaceChildren(gone);
+  }
+
   const list = $("draft-list");
   list.replaceChildren();
 
@@ -514,7 +532,8 @@ async function loadDrafts() {
       el("span", null, "Every draft has been reviewed.")
     );
     list.append(empty);
-    if (!state.draftId) {
+    // Keep "That draft is gone" if that just happened: it says why.
+    if (!state.draftId && !vanished) {
       $("draft-detail").replaceChildren(empty.cloneNode(true));
     }
     return;
@@ -547,17 +566,6 @@ async function loadDrafts() {
     list.append(card);
   }
 
-  if (state.draftId && !drafts.some((d) => d.id === state.draftId)) {
-    // Someone else reviewed it, or a new article superseded it.
-    state.draftId = null;
-    state.draft = null;
-    const empty = el("div", "empty");
-    empty.append(
-      el("strong", null, "That draft is gone"),
-      el("span", null, "It was reviewed or replaced meanwhile.")
-    );
-    $("draft-detail").replaceChildren(empty);
-  }
 }
 
 async function openDraft(id) {

@@ -21,15 +21,18 @@ from ole5.db import postgres
 # Not reviewers, and not sessions: one holds every reviewer's password hash,
 # the other live sign-in tokens. Nobody needs to browse either, and anyone
 # signed in can open this page.
+# What happened, not what is configured: options and documents have their
+# own pages, and articles are raw email the draft already shows cleaned.
 TABLES = (
-    "tickets", "articles", "drafts", "reviews",
-    "documents", "otrs_outbox", "audit_log", "agent_options",
+    "tickets", "drafts", "reviews", "otrs_outbox", "audit_log",
+    "urgent_emails", "weekly_runs",
 )
 
 # Columns held back from the table view: a 40KB email body makes a row
 # unreadable, and the detail panel shows everything anyway.
 BULKY = {
-    "articles": ("body_raw", "body_clean", "body_quoted", "body_signature"),
+    "urgent_emails": ("body",),
+    "weekly_runs": ("report", "summary"),
     "drafts": ("reply_body", "evidence", "reasoning"),
     "reviews": ("final",),
     "audit_log": ("evidence", "reasoning"),
@@ -37,13 +40,12 @@ BULKY = {
 
 SEARCHABLE = {
     "tickets": ("ticket_number", "title", "requester_email", "queue"),
-    "articles": ("subject", "sender_address", "body_clean"),
     "drafts": ("summary", "queue", "subtype", "conclusions"),
     "reviews": ("justification", "comment"),
-    "documents": ("filename",),
     "otrs_outbox": ("last_error", "otrs_article_id"),
     "audit_log": ("action", "actor"),
-    "agent_options": ("kind", "value", "description"),
+    "urgent_emails": ("to_address", "subject", "status", "error"),
+    "weekly_runs": ("week_key", "status", "error"),
 }
 
 
