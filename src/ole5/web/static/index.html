@@ -18,6 +18,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter+Tight:wght@400;500;600;650&family=IBM+Plex+Sans+Arabic:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/styles.css">
+  <link rel="stylesheet" href="/static/testing.css"><!-- testing page -->
 </head>
 <body>
 
@@ -57,6 +58,7 @@
     <button class="tab" data-tab="dashboard"><span class="idx">03</span> Dashboard</button>
     <button class="tab" data-tab="tables"><span class="idx">04</span> Tables</button>
     <button class="tab" data-tab="config"><span class="idx">05</span> Configuration</button>
+    <button class="tab" data-tab="testing" id="testing-tab" hidden><span class="idx">06</span> Testing</button><!-- testing page -->
 
     <div class="rail-foot">
       <div class="who" id="who"></div>
@@ -197,6 +199,26 @@
       <div id="cfg-body"></div>
     </section>
 
+    <!-- ============================================== 06 · testing (testing page: remove this section to remove the page) -->
+    <section class="page" id="page-testing" hidden>
+      <header>
+        <h1>Testing</h1>
+        <p id="test-where">Send a ticket to the Support queue as if a customer emailed it. The agent drafts it within a minute or two, and it appears on Review.</p>
+      </header>
+
+      <form class="test-form" id="test-form">
+        <label>Title<input type="text" id="test-title" dir="auto" maxlength="250" required></label>
+        <label>Message<textarea id="test-body" dir="auto" rows="9" required></textarea></label>
+        <div class="test-actions">
+          <button type="submit" class="btn approve" id="test-send">Send</button>
+          <span class="test-result" id="test-result"></span>
+        </div>
+      </form>
+
+      <div class="section-label">Sent from here</div>
+      <div class="kw-list" id="test-list"></div>
+    </section>
+
   </main>
 </div>
 
@@ -235,5 +257,6 @@
 <div class="toast" id="toast" hidden></div>
 
 <script src="/static/app.js"></script>
+<script src="/static/testing.js"></script><!-- testing page -->
 </body>
 </html>
