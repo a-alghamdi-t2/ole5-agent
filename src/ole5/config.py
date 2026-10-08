@@ -78,6 +78,10 @@ class Settings(BaseSettings):
     """Who may create a reviewer account: addresses and/or domains ("@t2.sa"),
     comma-separated. Unset: only the first account, then sign-up is closed."""
 
+    testing_page: bool = False  # testing page
+    """Shows the Testing page, which creates tickets in the intake queue.
+    Staging only: it refuses to write to production OTRS whatever this says."""
+
     # The weekly history update (ole5.history.weekly): Friday 04:00, Riyadh.
     weekly_enabled: bool = True
     weekly_report_recipients: str | None = None

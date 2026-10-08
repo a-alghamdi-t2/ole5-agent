@@ -1,0 +1,76 @@
+/* Testing page. Remove with testing.js and testing.py. */
+
+.test-form {
+  display: grid;
+  gap: 14px;
+  max-width: 760px;
+  margin-bottom: 28px;
+}
+.test-form label {
+  display: grid;
+  gap: 6px;
+  font-size: 11px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.test-form input,
+.test-form textarea {
+  font-family: var(--human);
+  font-size: 14px;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--text);
+  background: var(--ground);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 10px 12px;
+  outline: none;
+  unicode-bidi: plaintext;
+  transition: border-color .13s, box-shadow .13s;
+}
+.test-form textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
+.test-form input:focus,
+.test-form textarea:focus {
+  border-color: var(--seal);
+  box-shadow: 0 0 0 3px rgba(var(--seal-rgb), .12);
+}
+.test-actions { display: flex; align-items: center; gap: 14px; }
+.test-result { font: 12px var(--mono); color: var(--dim); }
+
+#test-list { max-width: 980px; }
+.test-row {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr) auto auto;
+  gap: 14px;
+  align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--rule-soft);
+}
+.test-row:last-child { border-bottom: none; }
+.test-num, .test-meta { font: 11.5px var(--mono); color: var(--faint); }
+.test-num { color: var(--dim); }
+.test-title {
+  font-family: var(--human);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  unicode-bidi: plaintext; text-align: start;
+}
+.test-status {
+  font: 11px var(--mono);
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--rule);
+  color: var(--faint);
+  background: none;
+  white-space: nowrap;
+}
+.test-status.wait  { color: var(--amber); border-color: var(--amber); }
+.test-status.ready { color: var(--seal); border-color: var(--seal); cursor: pointer; }
+.test-status.ready:hover { background: rgba(var(--seal-rgb), .1); }
+.test-empty { padding: 14px; color: var(--faint); font-size: 12px; }
+
+@media (max-width: 900px) {
+  .test-row { grid-template-columns: 1fr auto; }
+  .test-title { grid-column: 1 / -1; grid-row: 2; }
+  .test-meta { display: none; }
+}

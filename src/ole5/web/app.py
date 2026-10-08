@@ -86,6 +86,9 @@ app = FastAPI(title="OLE5 console", docs_url=None, redoc_url=None,
               lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
+from ole5.web import testing  # testing page
+app.include_router(testing.router)  # testing page
+
 
 
 
