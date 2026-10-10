@@ -1192,10 +1192,15 @@ async function loadDocuments() {
       loadDocuments();
     });
 
+    const download = el("a", "link", "Download");
+    download.href = "/api/documents/" + d.id + "/download";
+    download.setAttribute("download", d.filename);
+
     row.append(
       name,
       el("span", "sub", fmtTime(d.created_at)),
       el("span", "status " + d.status, d.status),
+      download,
       remove
     );
     if (d.error) row.append(el("div", "err", d.error));

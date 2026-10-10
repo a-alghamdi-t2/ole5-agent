@@ -584,6 +584,27 @@ async def _index(document_id: int, path: Path) -> None:
         )
 
 
+@app.get("/api/documents/{document_id}/download")
+async def download_document(document_id: int,
+                            _: dict = Depends(auth.require)) -> FileResponse:
+    """The file as it was uploaded, under its original name."""
+    row = await run_in_threadpool(
+        postgres.query_one,
+        "SELECT filename, content_hash FROM documents WHERE id = %s",
+        (document_id,),
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="no such document")
+
+    # The same place the upload wrote it: a folder per content hash.
+    upload_dir = get_settings().upload_dir.resolve()
+    path = (upload_dir / row["content_hash"][:16] / row["filename"]).resolve()
+    if upload_dir not in path.parents or not path.is_file():
+        raise HTTPException(status_code=404,
+                            detail="the file is no longer on the server")
+    return FileResponse(path, filename=row["filename"])
+
+
 @app.delete("/api/documents/{document_id}")
 async def delete_document(document_id: int,
                           _: dict = Depends(auth.require)) -> dict:
