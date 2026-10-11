@@ -5,5 +5,5 @@
 # to the unprivileged user for the actual process.
 set -e
 mkdir -p /app/data/uploads
-chown -R ole5:ole5 /app/data
-exec gosu ole5 "$@"
+chown -R agent:agent /app/data
+exec gosu agent "$@"

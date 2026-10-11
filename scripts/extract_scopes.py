@@ -1,4 +1,4 @@
-"""Evidence for the team scopes: what each Ole5 team did on each closed ticket.
+"""Evidence for the team scopes: what each team did on each closed ticket.
 
     python scripts/extract_scopes.py --try 2026022682000639     # one ticket through the model; stores nothing
     python scripts/extract_scopes.py --limit 20                 # a batch, stored
@@ -8,7 +8,7 @@
     python scripts/extract_scopes.py --export scopes            # one text file per team, for writing the scopes
 
 Reads ticket_timelines, so nothing here calls OTRS. Junk is skipped: it says
-nothing about what a team does. Only the four Ole5 New teams are counted.
+nothing about what a team does. Only the teams in TEAM_QUEUES are counted.
 
 Resumable: a ticket already done is skipped unless --redo or --redo-fallback.
 The model is JOURNEY_MODEL with JOURNEY_FALLBACK_MODEL, as for the journeys.
@@ -22,17 +22,14 @@ import sys
 import time
 from pathlib import Path
 
-from ole5.db import postgres
-from ole5.history import journey, scopes
+from support_agent.db import postgres
+from support_agent.history import journey, scopes
 
 NOT_JUNK = "position('junk' in lower(coalesce(t.queue, ''))) = 0"
 
-TITLES = {
-    "operations": "Operations (Ole5 New::Operations)",
-    "product": "Product (Ole5 New::Product)",
-    "product_support": "Product Support (Ole5 New::Product Support)",
-    "customer_success": "Customer Success (Ole5 New::Customer Success)",
-}
+def titles() -> dict[str, str]:
+    """Each team key with a readable name: "Operations (Ole5 New::Operations)"."""
+    return {key: f"{queue.split('::')[-1]} ({queue})" for queue, key in scopes.team_map().items()}
 
 
 def cmd_try(number: str) -> None:
@@ -113,7 +110,7 @@ def cmd_export(folder: str) -> None:
     person (or Claude) to turn into that team's scope."""
     out = Path(folder)
     out.mkdir(parents=True, exist_ok=True)
-    for team, title in TITLES.items():
+    for team, title in titles().items():
         rows = postgres.query(
             """
             SELECT c.ticket_number, c.subtype, s.did, s.passed_on

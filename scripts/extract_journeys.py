@@ -25,9 +25,9 @@ import json
 import sys
 import time
 
-from ole5.config import get_settings
-from ole5.db import postgres
-from ole5.history import journey
+from support_agent.config import get_settings
+from support_agent.db import postgres
+from support_agent.history import journey
 
 
 def _id_of(number: str) -> int:

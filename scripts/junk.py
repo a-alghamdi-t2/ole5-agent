@@ -25,9 +25,9 @@ import argparse
 from pathlib import Path
 import sys
 
-from ole5.config import get_settings
-from ole5.db import postgres
-from ole5.history import junk
+from support_agent.config import get_settings
+from support_agent.db import postgres
+from support_agent.history import junk
 
 
 def cmd_status(_: argparse.Namespace) -> None:
@@ -240,7 +240,7 @@ def _load_scores(path: Path) -> dict[str, dict]:
 
 
 def _flag(j: float, r: float, floor: float, margin: float, threshold: float) -> bool:
-    """The live rule (ole5.history.junk.decide), with the margin as a parameter."""
+    """The live rule (support_agent.history.junk.decide), with the margin as a parameter."""
     if j >= threshold and j > r:
         return True
     return j >= floor and j - r >= margin

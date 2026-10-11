@@ -93,7 +93,9 @@ services:
       # inside the container. Pinned explicitly rather than relying on it.
       MIGRATIONS_DIR: /app/migrations
       UPLOAD_DIR: /app/data/uploads
-      PROMPTS_DIR: /app/prompts
+      # The product folders (prompts and the like). PRODUCT in .env picks one;
+      # unset, it is ole5.
+      PRODUCTS_DIR: /app/products
     depends_on:
       db:
         # Waits for pg_isready, not just for the container to start. Without

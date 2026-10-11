@@ -27,10 +27,10 @@ import sys
 import time
 from collections import Counter, defaultdict
 
-from ole5.clients.otrs import OtrsClient, OtrsError
-from ole5.db import postgres
-from ole5.history import timeline
-from ole5.intake.search_text import Boilerplate, domain_of
+from support_agent.clients.otrs import OtrsClient, OtrsError
+from support_agent.db import postgres
+from support_agent.history import timeline
+from support_agent.intake.search_text import Boilerplate, domain_of
 
 PAUSE = 0.4          # between reads, as the export does, so we do not lean on their API
 
@@ -222,7 +222,7 @@ def cmd_stats() -> None:
 def _say_source() -> None:
     """Which OTRS this run reads from. The stored ticket ids belong to the
     instance the history was exported from; read another and nothing matches."""
-    from ole5.config import get_settings
+    from support_agent.config import get_settings
     print(f"reading from OTRS: {get_settings().otrs_base_url}\n")
 
 

@@ -39,8 +39,8 @@ COPY pyproject.toml ./
 # is installed over it below.
 ARG PIP_EXTRA_INDEX_URL=""
 ARG RAGENT_SPEC="ragent2"
-RUN mkdir -p src/ole5 \
- && touch src/ole5/__init__.py \
+RUN mkdir -p src/support_agent \
+ && touch src/support_agent/__init__.py \
  && pip install --no-cache-dir . \
  && pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu \
  && if [ -n "$PIP_EXTRA_INDEX_URL" ]; then \
@@ -53,15 +53,15 @@ COPY src ./src
 RUN pip install --no-cache-dir --no-deps --force-reinstall .
 
 COPY migrations ./migrations
-COPY prompts ./prompts
+COPY products ./products
 # The maintenance scripts (weekly, junk, similar, ...), so they can be run
 # inside the container with the app's own settings and models:
 #   docker compose exec ole5 python scripts/weekly.py status
 COPY scripts ./scripts
 
-RUN useradd --create-home --uid 10001 ole5 \
+RUN useradd --create-home --uid 10001 agent \
  && mkdir -p /app/data/uploads \
- && chown -R ole5:ole5 /app/data
+ && chown -R agent:agent /app/data
 
 # Pre-downloaded models from Stage 1, owned by the app user so they stay
 # readable after the gosu privilege drop.
@@ -80,4 +80,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
   CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8420/api/health', timeout=4).status==200 else 1)"
 
 ENTRYPOINT ["entrypoint.sh"]
-CMD ["python", "-m", "ole5"]
+CMD ["python", "-m", "support_agent"]

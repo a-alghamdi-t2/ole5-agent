@@ -18,8 +18,8 @@ import ssl
 import sys
 from datetime import datetime
 
-from ole5.config import get_settings
-from ole5.notify import mail
+from support_agent.config import get_settings
+from support_agent.notify import mail
 
 
 def main() -> None:

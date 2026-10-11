@@ -21,8 +21,8 @@ from __future__ import annotations
 import argparse
 import sys
 
-from ole5.db import postgres
-from ole5.history import precedent, similar
+from support_agent.db import postgres
+from support_agent.history import precedent, similar
 
 
 def cmd_status(_: argparse.Namespace) -> None:

@@ -15,12 +15,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from ole5.clients.otrs import OtrsClient, OtrsError  # noqa: E402
-from ole5.config import get_settings  # noqa: E402
-from ole5.logging import setup_logging  # noqa: E402
-from ole5.db import postgres  # noqa: E402
-from ole5.orchestrator import note as note_builder  # noqa: E402
-from ole5.orchestrator.contracts import Decision  # noqa: E402
+from support_agent.clients.otrs import OtrsClient, OtrsError  # noqa: E402
+from support_agent.config import get_settings  # noqa: E402
+from support_agent.logging import setup_logging  # noqa: E402
+from support_agent.db import postgres  # noqa: E402
+from support_agent.orchestrator import note as note_builder  # noqa: E402
+from support_agent.orchestrator.contracts import Decision  # noqa: E402
 BODY = """السلام عليكم،
 
 ما هو أقصى حجم لرفع المرفقات في OLE 5؟
@@ -57,7 +57,7 @@ def main() -> int:
         if "--create" in sys.argv:
             print("\nTicketCreate")
             ticket_id, number = otrs.create(
-                title="اختبار وكيل OLE5 - حجم المرفقات",
+                title=f"اختبار وكيل {s.product_name} - حجم المرفقات",
                 queue=s.otrs_intake_queue,
                 customer_user="a.alghamdi@t2.sa",
                 sender="a.alghamdi@t2.sa",
@@ -73,14 +73,14 @@ def main() -> int:
             print(f"\nTicketUpdate {target}: note plus queue move")
             article_id = otrs.apply_decision(
                 target,
-                note_subject="OLE5 agent - routing recommendation",
-                note_body=("Posted by the OLE5 agent client.\n\n"
+                note_subject=f"{s.product_name} agent - routing recommendation",
+                note_body=(f"Posted by the {s.product_name} agent client.\n\n"
                            "Note, queue move and classification in one call."),
-                queue="Ole5 New::Product Support",
+                queue=s.fallback_queue,
                 state="Waiting for Concerned Department",
                 type_="Issue / Problem",
                 priority="1. Low",
-                subtype="OLE5::Reset Password::No Password received",
+                subtype="Other",
                 conclusions="Issue - account locked after failed sign-in attempts",
             )
             after = otrs.get(target)

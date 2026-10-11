@@ -13,8 +13,8 @@ from __future__ import annotations
 import secrets
 import sys
 
-from ole5.db import audit, postgres
-from ole5.web import auth
+from support_agent.db import audit, postgres
+from support_agent.web import auth
 
 
 def main() -> None:

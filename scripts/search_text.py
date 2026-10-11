@@ -18,8 +18,8 @@ import re
 import sys
 from collections import Counter, defaultdict
 
-from ole5.db import postgres
-from ole5.intake.search_text import (
+from support_agent.db import postgres
+from support_agent.intake.search_text import (
     INTERNAL_DOMAINS, MIN_LINE, MIN_SEEN, MIN_SHARE, SEARCH_VER,
     Boilerplate, build, candidate_lines, domain_of, line_key,
 )

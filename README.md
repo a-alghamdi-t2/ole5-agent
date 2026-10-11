@@ -1,6 +1,8 @@
-# OLE5 Support Agent
+# Support Agent
 
 This app reads new support tickets from OTRS, decides what should happen to each one, and prepares a draft. A person reviews the draft in a web console and approves or rejects it. Nothing is written to OTRS until someone approves.
+
+The same code serves more than one product. Each product runs as its own copy of the app, with its own database, `.env` and folder under `products/`. OLE5 is the first; see `products/README.md` to add another.
 
 ## How it works
 
@@ -29,9 +31,9 @@ Only the console (port 8420) can be reached from other computers. The other thre
 ## Folders and files
 
 ```
-src/ole5/          the app's code
+src/support_agent/ the app's code, the same for every product
+products/          what differs per product: its prompts, and a README of its settings
 migrations/        database changes, applied automatically when the app starts
-prompts/           the instructions given to the AI models
 scripts/           tools you run by hand for maintenance
 data/uploads/      documents uploaded to the knowledge base (do not delete)
 .env               all settings and passwords (never share or commit this)
@@ -42,7 +44,7 @@ pyproject.toml     the Python packages the app needs
 yoyo.ini           settings for the migration tool
 ```
 
-Inside `src/ole5/`:
+Inside `src/support_agent/`:
 
 | Folder | What is in it |
 |---|---|
@@ -58,7 +60,7 @@ Inside `src/ole5/`:
 
 A few single files are worth knowing too: `config.py` reads the settings from `.env`, `options.py` handles the lists on the Configuration page, and `runtime.py` runs the background jobs.
 
-Inside `prompts/`:
+Inside `products/ole5/prompts/` (each product has its own):
 
 - `orchestrator/system.md` tells the agent how to work: how to search, when not to assert something, and how to write a reply. What to choose for each field (queue, priority, SLA and so on) is not in here. That is set on the Configuration page in the console.
 - `extraction/` has the prompts used to summarise past tickets.
@@ -149,6 +151,8 @@ Database changes in `migrations/` are applied by themselves when the app starts.
 | `WEEKLY_REPORT_RECIPIENTS` | Who gets the weekly report, separated by commas |
 | `DRY_RUN` | `true` means nothing is written to OTRS and no emails are sent |
 | `PIP_EXTRA_INDEX_URL` | Where the build downloads the private RAGent2 package from. Needed to build |
+| `PRODUCT` | Which folder under `products/` this copy uses. Unset means `ole5`. Every other product setting is listed in that product's README |
+| `TESTING_PAGE` | `true` shows the Testing page, which sends a title and message to the Support queue as a new ticket. Staging only: it refuses when the app points at production OTRS |
 
 ## Useful scripts
 
@@ -165,6 +169,7 @@ docker compose exec ole5 python scripts/<name>.py <command>
 | `similar.py` | The similar tickets index (`status`, `sync`) |
 | `reset_password.py` | Give someone a temporary password. Normally not needed: "Forgot your password?" on the sign-in page emails a code. This is for when email is not working |
 | `otrs_probe.py` | See what is waiting in the Support queue |
+| `configuration.py` | Save the Configuration page's values to a file, or replace them all from one (`export file.json`, `load file.json --yes`). Used once when setting up another product |
 | `mail_test.py` | Send one test email with the mail settings in `.env`, and see why it fails if it does (`mail_test.py someone@t2.sa`) |
 | `search_text.py`, `export_timelines.py`, `extract_journeys.py`, `extract_scopes.py` | Rebuild parts of the history. Only needed if the cleaning rules or prompts change |
 

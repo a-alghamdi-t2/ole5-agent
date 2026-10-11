@@ -24,8 +24,8 @@ import argparse
 import sys
 from datetime import UTC, datetime, timedelta
 
-from ole5.db import postgres
-from ole5.history import weekly
+from support_agent.db import postgres
+from support_agent.history import weekly
 
 
 def cmd_check(args: argparse.Namespace) -> None:
@@ -33,7 +33,7 @@ def cmd_check(args: argparse.Namespace) -> None:
     search by close date finds for the last N days. Reads only."""
     from collections import Counter
 
-    from ole5.config import get_settings
+    from support_agent.config import get_settings
 
     s = get_settings()
     source = s.history_otrs_base_url or s.otrs_base_url
