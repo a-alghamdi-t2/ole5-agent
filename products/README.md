@@ -25,9 +25,22 @@ products/
    `products/ole5/README.md`, with the new product's values. Anything left at
    OLE5's value shows up as a warning when the app starts.
 
-3. **A copy of the app.** Its own database, its own Qdrant store, its own port.
-   With Docker, that means its own `docker-compose.yml` with a different
-   project name, volumes and ports.
+3. **A copy of the app.** Its own folder (a clone of this repo), database,
+   Qdrant store and ports. The same `docker-compose.yml` serves every product;
+   these lines in the product's `.env` keep it apart from OLE5's:
+
+   ```
+   COMPOSE_PROJECT_NAME=rich-agent     # also names its database volume
+   QDRANT_VOLUME=rich-agent_qdrant     # create it once: docker volume create rich-agent_qdrant
+   CONSOLE_PORT=8421
+   DB_PORT=5433
+   QDRANT_PORT=6335
+   QDRANT_GRPC_PORT=6336
+   DOCLING_PORT=8093
+   ```
+
+   Unset, each is OLE5's. Never edit `docker-compose.yml` in a product's
+   folder: a changed file stops `git pull` there.
 
 4. **The Configuration page.** A new database starts with OLE5's values. Write
    the product's own in a file (see `scripts/configuration.py` for the format),

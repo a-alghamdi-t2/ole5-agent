@@ -1,4 +1,8 @@
 name: ole5-agent
+# Another product's copy sets COMPOSE_PROJECT_NAME in its .env (rich-agent,
+# say), which takes the place of this name -- and with it the database volume,
+# which is named after the project. The ports and the Qdrant volume below read
+# their .env too; unset, every value is OLE5's. See products/README.md.
 
 # Logs kept per container: 5 files of 20 MB each, then the oldest is dropped.
 # Docker's default keeps everything, which fills the disk over months.
@@ -29,7 +33,7 @@ services:
     # from here. The app does not need it -- it reaches the database by
     # service name -- and nothing else on the network should.
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:${DB_PORT:-5432}:5432"
     logging: *logging
     restart: unless-stopped
 
@@ -38,15 +42,14 @@ services:
     # cannot silently upgrade the store underneath the indexed vectors.
     image: qdrant/qdrant:v1.19.0
     volumes:
-      # The volume RAGent2's own compose project created. Declared external
-      # below so compose attaches the existing data rather than provisioning
-      # an empty one under this project's name.
+      # An existing volume, declared external below: for OLE5 the one RAGent2's
+      # own compose project created, so the indexed vectors carry over.
       - deploy_qdrant_storage:/qdrant/storage
     # This machine only: Qdrant has no password, so published on every
     # interface anyone on the network could read or delete the indexes.
     ports:
-      - "127.0.0.1:6333:6333"  # HTTP API + dashboard
-      - "127.0.0.1:6334:6334"  # gRPC API
+      - "127.0.0.1:${QDRANT_PORT:-6333}:6333"  # HTTP API + dashboard
+      - "127.0.0.1:${QDRANT_GRPC_PORT:-6334}:6334"  # gRPC API
     logging: *logging
     restart: unless-stopped
 
@@ -60,7 +63,7 @@ services:
     # This machine only: no password, and a document converter open to the
     # network is someone else's free OCR service.
     ports:
-      - "127.0.0.1:8092:5001"
+      - "127.0.0.1:${DOCLING_PORT:-8092}:5001"
     environment:
       DOCLING_SERVE_ENABLE_REMOTE_SERVICES: "1"
       # One worker = one conversion at a time. Concurrent OCR exhausted memory
@@ -109,7 +112,7 @@ services:
     # own machines. Plain HTTP -- fine inside the office network; anything
     # reachable from outside needs HTTPS in front of it first.
     ports:
-      - "8420:8420"
+      - "${CONSOLE_PORT:-8420}:8420"
     volumes:
       # Uploaded documents outlive the container; the row in `documents` points
       # at a file, and losing the file loses the ability to re-index it.
@@ -120,7 +123,9 @@ services:
 volumes:
   postgres_data:
   deploy_qdrant_storage:
-    # Created by RAGent2's `ragent2 up` under its own compose project, so the
-    # name carries that project's prefix. External so the indexed vectors
-    # survive this move.
+    # OLE5's was created by RAGent2's `ragent2 up` under its own compose
+    # project, hence the prefix. External, so it must exist before the first
+    # start: another product creates its own (docker volume create <name>)
+    # and sets QDRANT_VOLUME.
+    name: ${QDRANT_VOLUME:-deploy_qdrant_storage}
     external: true
