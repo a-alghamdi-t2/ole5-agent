@@ -333,6 +333,11 @@ class Settings(BaseSettings):
         needs the annotation, so only yoyo sees it.
         """
         dsn = self.db_dsn_direct
+        # A time limit on connecting: without one, a connection that is
+        # accepted and never answered (seen with localhost on Windows) waits
+        # forever instead of failing.
+        if "connect_timeout=" not in dsn:
+            dsn += ("&" if "?" in dsn else "?") + f"connect_timeout={self.db_connect_timeout}"
         for prefix in ("postgresql://", "postgres://"):
             if dsn.startswith(prefix):
                 return "postgresql+psycopg://" + dsn[len(prefix):]

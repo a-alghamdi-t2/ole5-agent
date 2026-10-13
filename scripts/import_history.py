@@ -1,8 +1,9 @@
 """A new product's closed tickets, from OTRS into the history, all at once.
 
-    python scripts/import_history.py count --since 2024-01-01   # how many, month by month; stores nothing
-    python scripts/import_history.py run --since 2024-01-01     # store them
-    python scripts/import_history.py run --since 2024-01-01 --limit 20   # a first small batch
+    python scripts/import_history.py count                      # how many, year by year; stores nothing
+    python scripts/import_history.py run --limit 20             # a first small batch
+    python scripts/import_history.py run                        # all of them
+    python scripts/import_history.py run --since 2024-01-01     # only those closed since then
     python scripts/import_history.py values                     # the field values the history uses
     python scripts/import_history.py values --out values.txt    # the same, into a file
 
@@ -40,18 +41,49 @@ PAUSE = 0.4          # between reads, as the other exports do, to spare their AP
 FIELDS = ("service", "queue", "type", "subtype", "priority", "sla", "state")
 
 
-def months(since: datetime) -> list[tuple[datetime, datetime]]:
-    """Calendar months from `since` to now. A month keeps each search far under
-    the 10,000 OTRS returns at most."""
+EARLIEST = datetime(2000, 1, 1, tzinfo=UTC)   # without --since: everything
+MAX_HITS = 10000                               # the most one OTRS search returns
+
+
+def years(since: datetime) -> list[tuple[datetime, datetime]]:
+    """Calendar years from `since` to now."""
     out, start, now = [], since, datetime.now(UTC)
     while start < now:
-        end = datetime(start.year + (start.month == 12), start.month % 12 + 1, 1, tzinfo=UTC)
+        end = datetime(start.year + 1, 1, 1, tzinfo=UTC)
         out.append((start, min(end, now)))
         start = end
     return out
 
 
-def _since(text: str) -> datetime:
+def months(start: datetime, end: datetime) -> list[tuple[datetime, datetime]]:
+    out = []
+    while start < end:
+        nxt = datetime(start.year + (start.month == 12), start.month % 12 + 1, 1, tzinfo=UTC)
+        out.append((start, min(nxt, end)))
+        start = nxt
+    return out
+
+
+def closed_in(otrs, start: datetime, end: datetime) -> list[str]:
+    """The ticket ids closed in the window. A year is one search; a year with
+    more than one search can return is searched month by month instead."""
+    ids = weekly.closed_between(otrs, start, end)
+    time.sleep(PAUSE)
+    if len(ids) < MAX_HITS:
+        return ids
+    out: list[str] = []
+    for a, b in months(start, end):
+        part = weekly.closed_between(otrs, a, b)
+        if len(part) >= MAX_HITS:
+            print(f"  {a:%Y-%m}: more than {MAX_HITS:,} in one month; some are missing")
+        out += part
+        time.sleep(PAUSE)
+    return out
+
+
+def _since(text: str | None) -> datetime:
+    if not text:
+        return EARLIEST
     try:
         return datetime.strptime(text, "%Y-%m-%d").replace(tzinfo=UTC)
     except ValueError:
@@ -69,13 +101,13 @@ def cmd_count(args: argparse.Namespace) -> None:
     _header()
     total = 0
     with weekly._otrs() as otrs:
-        for start, end in months(_since(args.since)):
-            ids = weekly.closed_between(otrs, start, end)
+        for start, end in years(_since(args.since)):
+            ids = closed_in(otrs, start, end)
             total += len(ids)
-            print(f"  {start:%Y-%m}  {len(ids):6}")
-            time.sleep(PAUSE)
+            if ids or total:          # nothing printed before the first ticket
+                print(f"  {start:%Y}  {len(ids):7,}", flush=True)
     stored = postgres.query_one("SELECT count(*) AS n FROM closed_tickets")["n"]
-    print(f"\n{total} closed tickets in OTRS; {stored} already stored here")
+    print(f"\n{total:,} closed tickets in OTRS; {stored:,} already stored here")
 
 
 def cmd_run(args: argparse.Namespace) -> None:
@@ -84,13 +116,13 @@ def cmd_run(args: argparse.Namespace) -> None:
             postgres.query("SELECT otrs_ticket_id FROM closed_tickets")}
     stored = skipped = failed = 0
     with weekly._otrs() as otrs:
-        for start, end in months(_since(args.since)):
-            ids = weekly.closed_between(otrs, start, end)
-            if len(ids) >= 10000:
-                print(f"  {start:%Y-%m}: OTRS returned its maximum of 10,000; some are missing")
+        for start, end in years(_since(args.since)):
+            ids = closed_in(otrs, start, end)
+            if not ids:
+                continue
             new = [i for i in ids if i not in have]
             skipped += len(ids) - len(new)
-            print(f"{start:%Y-%m}: {len(ids)} closed, {len(new)} to store", flush=True)
+            print(f"{start:%Y}: {len(ids)} closed, {len(new)} to store", flush=True)
             for tid in new:
                 if args.limit and stored >= args.limit:
                     break
@@ -142,9 +174,9 @@ def main() -> None:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
     c = sub.add_parser("count")
-    c.add_argument("--since", required=True)
+    c.add_argument("--since", help="2024-01-01; default: everything")
     r = sub.add_parser("run")
-    r.add_argument("--since", required=True)
+    r.add_argument("--since", help="2024-01-01; default: everything")
     r.add_argument("--limit", type=int)
     v = sub.add_parser("values")
     v.add_argument("--out")

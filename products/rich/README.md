@@ -32,8 +32,8 @@ team, map them to the same key in `TEAM_QUEUES` and change
 ## Building the history
 
 ```
-python scripts/import_history.py count --since 2024-01-01
-python scripts/import_history.py run --since 2024-01-01
+python scripts/import_history.py count
+python scripts/import_history.py run
 python scripts/import_history.py values --out values.txt
 python scripts/search_text.py boilerplate
 python scripts/search_text.py fill
