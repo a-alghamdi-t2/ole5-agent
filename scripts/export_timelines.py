@@ -30,9 +30,19 @@ from collections import Counter, defaultdict
 from support_agent.clients.otrs import OtrsClient, OtrsError
 from support_agent.db import postgres
 from support_agent.history import timeline
+from support_agent.history.weekly import _otrs as history_otrs
 from support_agent.intake.search_text import Boilerplate, domain_of
 
 PAUSE = 0.4          # between reads, as the export does, so we do not lean on their API
+# When OTRS refuses or does not answer, the same ticket is tried again after
+# waiting this long, longer each time: a busy or rate-limiting server usually
+# recovers within minutes, and a retry right away fails the same way.
+WAITS = (30, 60, 120, 300, 600)
+
+# The history is read from the history OTRS (HISTORY_OTRS_BASE_URL, falling
+# back to OTRS_BASE_URL), the same one import_history.py and the Friday run
+# read: the ticket ids stored come from there, and on another OTRS the same id
+# is another ticket or none.
 
 
 # ---------------------------------------------------------------------------
@@ -61,9 +71,15 @@ def _boilerplate_loader():
     return for_sender
 
 
-def _fetch(otrs: OtrsClient, otrs_ticket_id: str) -> list[dict]:
+def _fetch(otrs: OtrsClient, otrs_ticket_id: str, number: str | None = None) -> list[dict]:
+    """The ticket's articles. With `number`, checked to be that ticket: OTRS is
+    asked by its internal id, and on another OTRS the same id is another ticket."""
     raw = otrs._call("TicketGet", {"TicketID": otrs_ticket_id, "AllArticles": 1})
-    return (raw.get("Ticket") or [{}])[0].get("Article") or []
+    ticket = (raw.get("Ticket") or [{}])[0]
+    if number and str(ticket.get("TicketNumber") or "") != str(number):
+        raise ValueError(f"OTRS id {otrs_ticket_id} is ticket {ticket.get('TicketNumber')!r} "
+                         f"there, not {number}: wrong OTRS?")
+    return ticket.get("Article") or []
 
 
 def _route(tl: timeline.Timeline) -> str:
@@ -106,8 +122,8 @@ def cmd_show(number: str, dropped: bool = False) -> None:
                                 (number,))
     if ticket is None:
         sys.exit(f"no closed ticket {number}")
-    with OtrsClient() as otrs:
-        arts = _fetch(otrs, ticket["otrs_ticket_id"])
+    with history_otrs() as otrs:
+        arts = _fetch(otrs, ticket["otrs_ticket_id"], number)
     tl = timeline.build(arts, _boilerplate_loader())
     text = timeline.render(ticket, tl.entries, tl.queue_path)
     print(text)
@@ -129,10 +145,10 @@ def cmd_empties(n: int) -> None:
         ORDER BY tl.empty_count DESC LIMIT %s
         """, (n,))
     bp = _boilerplate_loader()
-    with OtrsClient() as otrs:
+    with history_otrs() as otrs:
         for r in rows:
             try:
-                tl = timeline.build(_fetch(otrs, r["otrs_ticket_id"]), bp)
+                tl = timeline.build(_fetch(otrs, r["otrs_ticket_id"], r["ticket_number"]), bp)
             except OtrsError as exc:
                 print(f"{r['ticket_number']}  FAILED {str(exc)[:70]}")
                 continue
@@ -148,10 +164,10 @@ def cmd_sample(n: int) -> None:
                           "ORDER BY random() LIMIT %s", (n,))
     bp = _boilerplate_loader()
     with_path = 0
-    with OtrsClient() as otrs:
+    with history_otrs() as otrs:
         for r in rows:
             try:
-                tl = timeline.build(_fetch(otrs, r["otrs_ticket_id"]), bp)
+                tl = timeline.build(_fetch(otrs, r["otrs_ticket_id"], r["ticket_number"]), bp)
             except OtrsError as exc:
                 print(f"  {r['ticket_number']}  FAILED {str(exc)[:70]}")
                 continue
@@ -180,14 +196,27 @@ def cmd_run(args: argparse.Namespace) -> None:
 
     bp = _boilerplate_loader()
     done = failed = 0
-    with OtrsClient() as otrs:
+    with history_otrs() as otrs:
         for i, r in enumerate(rows, 1):
-            try:
-                tl = timeline.build(_fetch(otrs, r["otrs_ticket_id"]), bp)
-                _save(r["id"], tl)
-            except (OtrsError, KeyError, ValueError) as exc:
+            tl = None
+            for attempt, wait in enumerate((0,) + WAITS):
+                if wait:
+                    print(f"      waiting {wait}s before trying again ({attempt}/{len(WAITS)})",
+                          flush=True)
+                    time.sleep(wait)
+                try:
+                    tl = timeline.build(_fetch(otrs, r["otrs_ticket_id"], r["ticket_number"]), bp)
+                    _save(r["id"], tl)
+                    break
+                except OtrsError as exc:
+                    print(f"  [{i}/{len(rows)}] {r['ticket_number']} FAILED {str(exc)[:70]}",
+                          flush=True)
+                except (KeyError, ValueError) as exc:     # the data, not the server: no retry
+                    print(f"  [{i}/{len(rows)}] {r['ticket_number']} FAILED {str(exc)[:70]}",
+                          flush=True)
+                    break
+            if tl is None:
                 failed += 1
-                print(f"  [{i}/{len(rows)}] {r['ticket_number']} FAILED {str(exc)[:70]}")
                 continue
             done += 1
             print(f"  [{i}/{len(rows)}] {r['ticket_number']}  "
