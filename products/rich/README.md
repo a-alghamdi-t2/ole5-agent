@@ -17,7 +17,10 @@ are the defaults in `config.py`; these are RiCH's, set in its `.env`.
 | `QUEUE_PREFIX` | `RiCH::` |
 | `SESSION_COOKIE` | `rich_session` |
 | `OWN_SERVICES` | RiCH's Service value(s), once both agents read Support |
-| `FALLBACK_SERVICE`, `FALLBACK_QUEUE`, `FALLBACK_SLA`, `SUBTYPE_PREFIX` | from `import_history.py values` |
+| `FALLBACK_SERVICE` | `RiCH` |
+| `FALLBACK_QUEUE` | `RiCH::Product Support` |
+| `FALLBACK_SLA` | `SLA - Low (RiCH + B12)` |
+| `SUBTYPE_PREFIX` | `RiCH::` |
 
 Junk is one queue for every product, so there is one junk index, OLE5's.
 RiCH does not load the Junk queue into its history. Its junk check still
@@ -28,6 +31,19 @@ until they are loaded.
 The three Operation queues are kept as three teams. If they turn out to be one
 team, map them to the same key in `TEAM_QUEUES` and change
 `prompts/extraction/scopes.md` to match.
+
+## The Configuration page
+
+`configuration.json` holds RiCH's field values, taken from the tickets closed
+since October 2025 (`import_history.py values --since 2025-10-01`), so only
+names OTRS uses today. Load it once into RiCH's database:
+
+```
+python scripts/configuration.py load products/rich/configuration.json --yes
+```
+
+The queue descriptions are first drafts; they are rewritten from the team
+scopes.
 
 ## Building the history
 

@@ -1,0 +1,357 @@
+{
+  "guidance": {
+    "service": "The product the ticket is about. The Support queue receives mail for RiCH and for OLE5, and the ticket does not say which: decide from the content. RiCH is the SMS platform (sending, delivery reports, sender names, message approval, balance, API and integration); OLE5 is administrative correspondence. When it gives you nothing to go on, choose the likelier one and set confidence to low -- that is what tells the reviewer you were guessing.",
+    "queue": "Where the ticket goes when it leaves the Support queue. Decide it first, before you think about how to reply. Choose on what the ticket is about -- not on whether you can answer it, and not on how much the customer told you; even a ticket too vague to act on is about something. Set it on every ticket, whatever the action.\n\nThe team scopes at the end describe what each team handles and where the lines between them fall; choose by them. A ticket reporting something broken belongs with the team that can fix it even when you cannot diagnose it. When a ticket is too vague to place, choose the queue its subject points at and set confidence to low. queue_reason says why this queue rather than the others; if you cannot give a reason, you have not chosen.",
+    "next_state": "What happens to the ticket next. Waiting For Customer Response when you ask the customer for something; Waiting for Concerned Department when you route; open when you answer. The other states are set by people, not by you.",
+    "type": "What the ticket is -- not how much you know about it. A service that is down is Incident / Urgent and a defect is Issue / Problem whether or not you can say why; not knowing the cause is normal, and is what missing and the routing are for. It does not make a fault an Inquiry: keep Inquiry for tickets that actually ask a question.",
+    "subtype": "The specific kind of request, from the RiCH branch. Choose the one that names the same thing the ticket reports. When none fits, choose Other -- a near miss misleads the team more than Other does.",
+    "priority": "The severity of the problem: judged from the impact on the customer's work -- how many of their messages or users are affected, whether sending stops altogether, whether a workaround exists -- not from the tone. Capitals or the word urgent in a ticket are not impact; a polite ticket reporting that no messages are being delivered is still Critical. Problems outside production, such as a test account, are Low. When it is genuinely unclear, choose 1. Low.",
+    "sla": "The service level the ticket is held to. Choose the level with the same severity as the priority you chose: a Critical problem is held to the Critical SLA, a Low one to the Low SLA."
+  },
+  "options": {
+    "service": [
+      {
+        "value": "RiCH",
+        "description": "The RiCH SMS platform: sending messages, delivery reports, sender names, message approval, balance, the API and integrations. Almost every ticket here.",
+        "locked": true
+      },
+      {
+        "value": "OLE5 / Ole5 New",
+        "description": "Administrative correspondence (Ole5, معاملاتي / الاتصالات الإدارية): correspondence, inbox, delivery statements, stickers, archive. Another product: always route an OLE5 ticket; it is not ours to answer.",
+        "locked": true
+      }
+    ],
+    "queue": [
+      {
+        "value": "RiCH::Product Support",
+        "description": "Help using RiCH as it works today: questions, delivery status checks, sender names, reports and routine requests. To be refined from the team scopes.",
+        "locked": true
+      },
+      {
+        "value": "RiCH::Operation",
+        "description": "Work that needs access to the platform, the customer's account or the operators: delivery failures, whitelisting, carrier and operator issues, account changes at the backend. To be refined from the team scopes.",
+        "locked": true
+      },
+      {
+        "value": "RiCH::Operation Long Project",
+        "description": "Operation work that runs as a longer project rather than a single request. To be refined from the team scopes.",
+        "locked": true
+      },
+      {
+        "value": "RiCH::Operation::Al Rajhi Bank",
+        "description": "Operation work for the Al Rajhi Bank account. To be refined from the team scopes.",
+        "locked": true
+      },
+      {
+        "value": "RiCH::Product",
+        "description": "The product itself: defects, whether something is by design, new requirements and change requests. To be refined from the team scopes.",
+        "locked": true
+      },
+      {
+        "value": "RiCH::Customer Success",
+        "description": "The relationship rather than the system: meetings, contracts, commercial and billing questions, complaints about the service. To be refined from the team scopes.",
+        "locked": true
+      },
+      {
+        "value": "Junk",
+        "description": "Spam, advertising and mail unrelated to our products only; never a customer request.",
+        "locked": false
+      }
+    ],
+    "next_state": [
+      {
+        "value": "closed successful",
+        "description": "Only for junk sent to the Junk queue. Never for a real customer's ticket, even one you have answered completely: they may write back, and a person closes it once they are sure.",
+        "locked": false
+      },
+      {
+        "value": "open",
+        "description": "When you answer and nothing further is awaited from anyone.",
+        "locked": true
+      },
+      {
+        "value": "pending auto close+",
+        "description": "Set by people, not by you: the ticket closes by itself after a waiting period.",
+        "locked": false
+      },
+      {
+        "value": "pending reminder",
+        "description": "Set by people, not by you: a reminder to come back to the ticket later.",
+        "locked": false
+      },
+      {
+        "value": "Waiting for Concerned Department",
+        "description": "When you route: the ticket waits for the team of the queue you chose.",
+        "locked": true
+      },
+      {
+        "value": "Waiting For Customer Response",
+        "description": "When you ask the customer for something (ask_more): the ticket waits for their answer.",
+        "locked": true
+      },
+      {
+        "value": "Waiting for Service Provider",
+        "description": "Set by people, not by you: the fix depends on an outside provider and the ticket waits on them.",
+        "locked": false
+      }
+    ],
+    "type": [
+      {
+        "value": "Inquiry",
+        "description": "A question: how to do something, what something means, what the status of something is. Only for tickets that actually ask a question.",
+        "locked": true
+      },
+      {
+        "value": "Request",
+        "description": "Asks us to do routine work: register or renew a sender name, whitelist an IP or username, add balance, extract a report, change account data.",
+        "locked": true
+      },
+      {
+        "value": "Issue / Problem",
+        "description": "Something is not working as it should for this customer: an error, messages not delivered, wrong data -- whether or not the cause is known.",
+        "locked": true
+      },
+      {
+        "value": "Incident / Urgent",
+        "description": "Something is down or unusable now for many: sending has stopped, an operator is down, the platform or API is unreachable.",
+        "locked": true
+      },
+      {
+        "value": "Service Failure",
+        "description": "A service we provide failed to be delivered -- messages not sent or delayed -- rather than a screen or feature malfunctioning.",
+        "locked": false
+      },
+      {
+        "value": "External Vendor Support",
+        "description": "The problem lies with an outside provider, such as a telecom operator or carrier, rather than with RiCH itself.",
+        "locked": false
+      },
+      {
+        "value": "New requirement",
+        "description": "Asks for something the product does not do yet: a new feature or a change to how it works.",
+        "locked": false
+      },
+      {
+        "value": "Internal Tickets",
+        "description": "Raised by our own staff for internal work, not by a customer.",
+        "locked": false
+      },
+      {
+        "value": "Junk",
+        "description": "Spam, advertising, or mail unrelated to our products. Goes with the Junk queue.",
+        "locked": false
+      },
+      {
+        "value": "Default",
+        "description": "Only when no other type fits at all. Avoid it: it tells the team nothing.",
+        "locked": true
+      }
+    ],
+    "subtype": [
+      {
+        "value": "RiCH::Inquiry",
+        "description": "A general question about RiCH that no more specific subtype covers.",
+        "locked": false
+      },
+      {
+        "value": "RiCH::Inquiry::Inquiry about our service",
+        "description": "A question about what the service offers or how it works.",
+        "locked": false
+      },
+      {
+        "value": "RiCH::Request",
+        "description": "A request for routine work that no more specific subtype covers.",
+        "locked": false
+      },
+      {
+        "value": "RiCH::Request::Report",
+        "description": "A request for a report or a data extraction.",
+        "locked": false
+      },
+      {
+        "value": "RiCH::Request::New Requirement",
+        "description": "A request for something RiCH does not do yet.",
+        "locked": false
+      },
+      {
+        "value": "RiCH::Request::Change request",
+        "description": "A request to change how something works for this customer.",
+        "locked": false
+      },
+      {
+        "value": "RiCH::DLR::Status",
+        "description": "A question about the delivery status of messages: whether they were delivered, the delivery report.",
+        "locked": false
+      },
+      {
+        "value": "RiCH::DLR::SMS not deliver",
+        "description": "Messages were sent but did not reach the recipients.",
+        "locked": false
+      },
+      {
+        "value": "RiCH::DLR::Issue from the new telecom carrier",
+        "description": "Delivery problems that come from the new telecom carrier.",
+        "locked": false
+      },
+      {
+        "value": "RiCH::DLR::Blocked Number",
+        "description": "Messages not delivered because the recipient's number is blocked.",
+        "locked": false
+      },
+      {
+        "value": "RiCH::DLR::Username Whitelist",
+        "description": "A username has to be whitelisted for its messages to be delivered.",
+        "locked": false
+      },
+      {
+        "value": "RiCH::DLR::Duplicate SMS",
+        "description": "The same message was received more than once.",
+        "locked": false
+      },
+      {
+        "value": "RiCH::Sender Registration",
+        "description": "Registering a new sender name.",
+        "locked": false
+      },
+      {
+        "value": "RiCH::Sender Registration::Renewal",
+        "description": "Renewing an existing sender name registration.",
+        "locked": false
+      },
+      {
+        "value": "RiCH::Sender Registration::Locally",
+        "description": "Registering a sender name for local sending.",
+        "locked": false
+      },
+      {
+        "value": "RiCH::SMS Approval",
+        "description": "Approval of message content before it can be sent.",
+        "locked": false
+      },
+      {
+        "value": "RiCH::SMS Approval::Rejected",
+        "description": "Message content was rejected at approval.",
+        "locked": false
+      },
+      {
+        "value": "RiCH::Integration",
+        "description": "Connecting another system to RiCH, in general.",
+        "locked": false
+      },
+      {
+        "value": "RiCH::Integration::Integration API",
+        "description": "Connecting through the RiCH API: setup, errors, how a call works.",
+        "locked": false
+      },
+      {
+        "value": "RiCH::Integration::New IP Whiteliste",
+        "description": "Adding an IP address to the whitelist so it can reach the platform.",
+        "locked": false
+      },
+      {
+        "value": "RiCH::Incident",
+        "description": "A wider failure of the service.",
+        "locked": false
+      },
+      {
+        "value": "RiCH::Incident::Operator outage",
+        "description": "A telecom operator is down, so messages through it fail.",
+        "locked": false
+      },
+      {
+        "value": "RiCH::Issue on our services",
+        "description": "Something in RiCH itself does not work as it should.",
+        "locked": false
+      },
+      {
+        "value": "RiCH::Issue on our services::Defect",
+        "description": "A defect in RiCH.",
+        "locked": false
+      },
+      {
+        "value": "RiCH::Issue on our services::Bug",
+        "description": "A bug in RiCH.",
+        "locked": false
+      },
+      {
+        "value": "RiCH::Payment::Add Balance",
+        "description": "Adding balance (credit) to the account.",
+        "locked": false
+      },
+      {
+        "value": "RiCH::Notify",
+        "description": "A notice sent to us for information, not a request.",
+        "locked": false
+      },
+      {
+        "value": "RiCH::Internal Tickets",
+        "description": "Internal work raised by our own staff.",
+        "locked": false
+      },
+      {
+        "value": "Other",
+        "description": "None of the others fits. Better than a near miss.",
+        "locked": true
+      }
+    ],
+    "priority": [
+      {
+        "value": "1. Low",
+        "description": "Low severity: no impact on the customer's sending -- questions, status checks, reports, sender name and routine requests, enhancement requests, problems outside production.",
+        "locked": true
+      },
+      {
+        "value": "2. Medium",
+        "description": "Medium severity: something fails but a workaround exists, or only some messages or users are affected and the work goes on.",
+        "locked": false
+      },
+      {
+        "value": "3. High",
+        "description": "High severity: a core function is lost with no acceptable workaround -- many messages not delivered, an important sender or integration stopped -- for this customer.",
+        "locked": false
+      },
+      {
+        "value": "5 Critical",
+        "description": "Critical severity: sending is down or unusable -- no messages go out, the platform or API does not respond.",
+        "locked": false
+      },
+      {
+        "value": "7. Inquiry",
+        "description": "Not a severity level. A question is 1. Low; do not choose this.",
+        "locked": false
+      },
+      {
+        "value": "Default",
+        "description": "Not a severity level. Do not choose this.",
+        "locked": false
+      },
+      {
+        "value": "New Feature",
+        "description": "Not a severity level. An enhancement request is 1. Low; do not choose this.",
+        "locked": false
+      }
+    ],
+    "sla": [
+      {
+        "value": "SLA - Low (RiCH + B12)",
+        "description": "For Low severity: questions, requests, enhancements.",
+        "locked": true
+      },
+      {
+        "value": "SLA - Mid (RiCH + B12)",
+        "description": "For Medium severity.",
+        "locked": false
+      },
+      {
+        "value": "SLA - High (RiCH + B12)",
+        "description": "For High severity.",
+        "locked": false
+      },
+      {
+        "value": "SLA - Critical (RiCH + B12)",
+        "description": "For Critical severity.",
+        "locked": false
+      }
+    ]
+  }
+}
