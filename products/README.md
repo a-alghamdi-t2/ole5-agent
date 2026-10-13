@@ -31,6 +31,8 @@ products/
 
    ```
    COMPOSE_PROJECT_NAME=rich-agent     # also names its database volume
+   POSTGRES_USER=rich                  # its database's user and name, set
+   POSTGRES_DB=rich                    # before the database is first started
    QDRANT_VOLUME=rich-agent_qdrant     # create it once: docker volume create rich-agent_qdrant
    CONSOLE_PORT=8421
    DB_PORT=5433

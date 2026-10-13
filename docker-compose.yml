@@ -16,16 +16,18 @@ services:
   db:
     image: postgres:18
     environment:
-      POSTGRES_USER: ole5
+      # The database's user and name. Unset, both are ole5 (OLE5's); another
+      # product sets its own in .env, before its database is first created.
+      POSTGRES_USER: ${POSTGRES_USER:-ole5}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
-      POSTGRES_DB: ole5
+      POSTGRES_DB: ${POSTGRES_DB:-ole5}
     volumes:
       # Postgres 18+ wants the mount one level up: it stores data in a
       # major-version subdirectory under here, so pg_upgrade can work across
       # versions without crossing a mount boundary.
       - postgres_data:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ole5 -d ole5"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ole5} -d ${POSTGRES_DB:-ole5}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -86,7 +88,7 @@ services:
     env_file: .env
     environment:
       # The database, by service name on the compose network.
-      DATABASE_URL: postgresql://ole5:${POSTGRES_PASSWORD}@db:5432/ole5
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ole5}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-ole5}
       # Service names on the compose network. Docling's container port is 5001;
       # 8092 is only where it is published on the host.
       QDRANT_URL: http://qdrant:6333
