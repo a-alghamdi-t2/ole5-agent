@@ -10,6 +10,7 @@
     python scripts/extract_journeys.py --redo-fallback             # the fallback's journeys, again with the main model
     python scripts/extract_journeys.py --pause 10                  # slower, if the rate limit is still hit
     python scripts/extract_journeys.py --stats
+    python scripts/extract_journeys.py --export journeys          # one text file per queue, for writing the knowledge base
 
 Reads ticket_timelines (scripts/export_timelines.py), so nothing here calls
 OTRS. The model is JOURNEY_MODEL, falling back to JOURNEY_FALLBACK_MODEL; each
@@ -23,7 +24,9 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import re
 import time
+from pathlib import Path
 
 from support_agent.config import get_settings
 from support_agent.db import postgres
@@ -132,6 +135,46 @@ def cmd_stats() -> None:
         print(f"  {m['n']:5}  {m['model']}")
 
 
+def cmd_export(folder: str) -> None:
+    """One text file per queue the tickets were closed in: each ticket's
+    summary and steps, for a person (or Claude) to turn into knowledge base
+    documents. Junk is left out."""
+    out = Path(folder)
+    out.mkdir(parents=True, exist_ok=True)
+    rows = postgres.query(
+        """
+        SELECT c.ticket_number, c.title, c.queue, c.subtype, j.path, j.steps, j.summary
+        FROM ticket_journeys j JOIN closed_tickets c ON c.id = j.closed_ticket_id
+        WHERE position('junk' in lower(coalesce(c.queue, ''))) = 0
+        ORDER BY c.queue, c.otrs_closed_at DESC NULLS LAST
+        """)
+    by_queue: dict[str, list[dict]] = {}
+    for r in rows:
+        by_queue.setdefault(r["queue"] or "(no queue)", []).append(r)
+    for queue, tickets in by_queue.items():
+        lines = [
+            f"# Closed in {queue}",
+            "",
+            f"{len(tickets)} tickets: what the customer asked, what was done, and",
+            "how it ended. Written per ticket by a model from the ticket's history.",
+            "",
+        ]
+        for r in tickets:
+            lines.append(f"[{r['ticket_number']}] {r['title'] or ''}"
+                         + (f"  ({r['subtype']})" if r["subtype"] else ""))
+            if r["path"] and len(r["path"]) > 1:
+                lines.append("  PATH: " + " -> ".join(r["path"]))
+            if r["summary"]:
+                lines.append(f"  SUMMARY: {r['summary']}")
+            for step in r["steps"] or []:
+                lines.append(f"    - {step.get('what', '')}")
+            lines.append("")
+        name = re.sub(r"[^0-9a-z]+", "_", queue.lower()).strip("_")
+        path = out / f"{name}.txt"
+        path.write_text("\n".join(lines), encoding="utf-8")
+        print(f"  {path}  {len(tickets)} tickets, {path.stat().st_size // 1024} KB")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -146,6 +189,7 @@ def main() -> None:
     ap.add_argument("--pause", type=float, default=5.0,
                     help="seconds between tickets, to stay under the rate limit (default 5)")
     ap.add_argument("--stats", action="store_true")
+    ap.add_argument("--export", metavar="FOLDER")
     args = ap.parse_args()
     try:
         if args.check:
@@ -156,6 +200,8 @@ def main() -> None:
             cmd_try(args.try_)
         elif args.stats:
             cmd_stats()
+        elif args.export:
+            cmd_export(args.export)
         else:
             cmd_run(args)
     finally:
