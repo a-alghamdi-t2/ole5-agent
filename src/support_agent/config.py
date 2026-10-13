@@ -80,6 +80,12 @@ class Settings(BaseSettings):
     session_cookie: str = "ole5_session"
     """The sign-in cookie's name. Two products on one host need different ones,
     or signing in to one signs you out of the other."""
+    own_services: str | None = None
+    """Comma-separated: the Service values that are this product's. Set, the
+    Review page lists drafts the agent gave another Service in their own
+    section ("Probably RiCH"), and a Not ours button appears. Unset: every
+    draft is listed together, as before. For when two products' agents read
+    the same intake queue."""
 
     # ---- database ------------------------------------------------------
     database_url: SecretStr
@@ -288,6 +294,10 @@ class Settings(BaseSettings):
     @property
     def history_queue_list(self) -> list[str]:
         return [q.strip() for q in (self.history_queues or "").split(",") if q.strip()]
+
+    @property
+    def own_service_list(self) -> list[str]:
+        return [v.strip() for v in (self.own_services or "").split(",") if v.strip()]
 
     @property
     def team_queue_map(self) -> dict[str, str]:

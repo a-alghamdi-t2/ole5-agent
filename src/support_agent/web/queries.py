@@ -65,6 +65,10 @@ def jsonable(value: Any) -> Any:
     return value
 
 
+def jsonable_row(row: dict) -> dict:
+    return {k: jsonable(v) for k, v in row.items()}
+
+
 def _clean(rows: list[dict]) -> list[dict]:
     return [{k: jsonable(v) for k, v in row.items()} for row in rows]
 
@@ -168,6 +172,7 @@ def dashboard() -> dict[str, Any]:
           count(*) FILTER (WHERE status = 'approved')    AS approved,
           count(*) FILTER (WHERE status = 'rejected')    AS rejected,
           count(*) FILTER (WHERE status = 'superseded')  AS superseded,
+          count(*) FILTER (WHERE status = 'other_product') AS other_product,
           count(*) FILTER (WHERE action = 'answer')      AS answers,
           count(*) FILTER (WHERE action = 'route')       AS routes,
           count(*) FILTER (WHERE action = 'answer'

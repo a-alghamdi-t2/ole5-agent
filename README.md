@@ -152,7 +152,20 @@ Database changes in `migrations/` are applied by themselves when the app starts.
 | `DRY_RUN` | `true` means nothing is written to OTRS and no emails are sent |
 | `PIP_EXTRA_INDEX_URL` | Where the build downloads the private RAGent2 package from. Needed to build |
 | `PRODUCT` | Which folder under `products/` this copy uses. Unset means `ole5`. Every other product setting is listed in that product's README |
+| `OWN_SERVICES` | Only when two products read the same intake queue: the Service values that are this product's. See `products/README.md` |
 | `TESTING_PAGE` | `true` shows the Testing page, which sends a title and message to the Support queue as a new ticket. Staging only: it refuses when the app points at production OTRS |
+
+## Who can do what
+
+Each person has their own permissions, set by an admin on the **Users** page:
+Review, Dashboard, Tables, Knowledge base, Team scopes, Urgent, Configuration
+and Testing. A new account starts with Review and Tables. An admin can do
+everything, including the Users page. The server checks every request, so a
+missing permission is refused even if someone calls the API directly.
+
+There is always at least one admin: an admin cannot remove their own admin or
+switch off their own account, and in a new database the first person to sign
+up becomes the admin.
 
 ## Useful scripts
 

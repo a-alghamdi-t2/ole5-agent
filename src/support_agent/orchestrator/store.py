@@ -23,13 +23,17 @@ from support_agent.orchestrator.contracts import Decision
 log = get_logger(__name__)
 
 
-def _evidence_json(retrievals: list[Retrieval], corrections: list[str]) -> str:
+def _evidence_json(retrievals: list[Retrieval], corrections: list[str],
+                   held_reply: dict | None = None) -> str:
     s = get_settings()
     return json.dumps(
         {
             "verdict": strongest(retrievals).value if retrievals else "not_in_kb",
             "searches": [r.as_json() for r in retrievals],
             "corrections": corrections,
+            # The answer the validator held back (inferential evidence only).
+            # Not sent anywhere: the review page offers it to the reviewer.
+            "held_reply": held_reply,
             # The settings that produced this. A draft made at pool 10 is not
             # comparable with one made at 30, and stop_reason 'max_search_rounds'
             # means we capped it, not that the retriever gave up.
@@ -52,7 +56,8 @@ def save(
     meta: dict,
 ) -> int:
     """Write the draft. Returns its id."""
-    evidence = _evidence_json(retrievals, corrections)
+    evidence = _evidence_json(retrievals, corrections,
+                              getattr(decision, "_held_reply", None))
 
     # The newest article this draft was built from. A later one supersedes it.
     built_to = postgres.query_one(
@@ -139,4 +144,4 @@ def save(
         extra={"ticket": context.ticket_number, "draft": draft_id,
                "action": decision.action.value, "superseded": superseded},
     )
-    return draft_id
+    return draft_id

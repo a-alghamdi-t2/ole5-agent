@@ -58,3 +58,25 @@ products/
    (`scripts/`). Then turn on `WEEKLY_ENABLED`.
 
 7. **Test on staging** with the Testing page, then turn on `POLLER_ENABLED`.
+
+## Two products, one intake queue
+
+When two products' tickets arrive in the same queue (OLE5 and RiCH both in
+Support), both agents read it and draft every ticket. Set `OWN_SERVICES` in
+each product's `.env` to the Service values that are its own:
+
+```
+OWN_SERVICES=OLE5 / Ole5 New      # OLE5's .env
+OWN_SERVICES=RiCH                 # RiCH's .env
+```
+
+Each console then lists the drafts the agent thinks are the other product's
+in their own section at the bottom of Review ("Probably RiCH"), outside the
+badge and the sound. A reviewer approves one if it is theirs after all, or
+marks it **Not ours**: nothing is written to OTRS, it is not counted as a
+rejection, and the ticket is not drafted again unless the customer writes
+again. Whichever console approves a ticket first moves it out of the queue;
+the other console's draft is then withdrawn by itself.
+
+Turn it on in both at the same time: with only one side on, a ticket marked
+Not ours there has nobody to pick it up.

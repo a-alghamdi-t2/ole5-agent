@@ -132,6 +132,14 @@ def approve(draft_id: int, reviewer_id: int, *,
                 )
 
             merged = {**{k: row[k] for k in DECISION_FIELDS}, **final}
+            # A route carries no reply, and an answer must have one. The page
+            # keeps to this; the check is for anything that does not.
+            if merged["action"] == "route":
+                merged["reply_kind"] = merged["reply_body"] = None
+            elif not (merged.get("reply_body") or "").strip():
+                raise ValueError("an answer needs a reply")
+            elif not merged.get("reply_kind"):
+                merged["reply_kind"] = "answer"
 
             cur.execute(
                 """
@@ -213,6 +221,35 @@ def reject(draft_id: int, reviewer_id: int, justification: str,
                            "review": review_id})
     log.info("rejected", extra={"draft": draft_id, "review": review_id})
     return review_id
+
+
+def not_ours(draft_id: int, reviewer_id: int, comment: str | None = None) -> None:
+    """Mark a draft as another product's ticket. Nothing is written to OTRS.
+
+    Not a rejection: the agent was not wrong about what to do, the ticket is
+    simply for the other product's agent, which drafts it in its own console.
+    Like a rejection, the ticket is not drafted again here unless the customer
+    writes again.
+    """
+    with postgres.connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT ticket_id, status, service FROM drafts WHERE id = %s",
+                        (draft_id,))
+            row = cur.fetchone()
+            if row is None:
+                raise NotPending(f"no draft {draft_id}")
+            cur.execute(
+                "UPDATE drafts SET status = 'other_product' WHERE id = %s AND status = 'pending'",
+                (draft_id,),
+            )
+            if cur.rowcount == 0:
+                raise NotPending(f"draft {draft_id} is {row['status']}, not pending")
+
+    audit.record(actor="reviewer", action="not_ours", ticket_id=row["ticket_id"],
+                 draft_id=draft_id, reasoning=(comment or "").strip() or None,
+                 evidence={"reviewer": _reviewer_name(reviewer_id),
+                           "service": row["service"]})
+    log.info("not ours", extra={"draft": draft_id, "service": row["service"]})
 
 
 def send_pending(*, limit: int = 20) -> tuple[int, int]:

@@ -1,0 +1,2 @@
+ALTER TABLE reviewers DROP COLUMN IF EXISTS permissions;
+ALTER TABLE reviewers DROP COLUMN IF EXISTS is_admin;

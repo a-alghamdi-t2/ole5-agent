@@ -58,6 +58,16 @@ def _snap(value: str | None, kind: str, default: str,
             hits = [o for o in allowed if bare(o) == bare(candidate) and bare(candidate)]
             if len(hits) == 1:
                 return hits[0]
+        # Brackets and punctuation, last. OTRS has values with a stray or
+        # missing character -- "SLA - High (Ole5 + Ole5 New + Availo" lacks its
+        # closing bracket -- and the model writes the tidy form. Only letters
+        # and digits are compared, and only a single match is taken.
+        def loose(text: str) -> str:
+            return re.sub(r"[\W_]+", "", text.casefold())
+        for candidate in candidates:
+            hits = [o for o in allowed if loose(o) == loose(candidate) and loose(candidate)]
+            if len(hits) == 1:
+                return hits[0]
     corrections.append(f"{field}: {value!r} is not an option, using {default!r}")
     return default
 
@@ -120,16 +130,32 @@ def apply(decision: Decision, retrievals: list[Retrieval]) -> tuple[Decision, li
                 corrections.append("answer with no evidence: forced to route")
                 decision.action = Action.ROUTE
             elif verdict == Verdict.PARTIAL:
+                # Routed all the same, but the reply is kept for the reviewer.
+                # Some of these are right, and a person who checks it against
+                # the documents can send it; the agent cannot, for the reason
+                # above.
                 corrections.append("answer on inferential evidence only: "
                                    "forced to route")
                 decision.action = Action.ROUTE
+                if decision.reply_body and decision.reply_body.strip():
+                    decision._held_reply = {
+                        "kind": ReplyKind.ANSWER.value,
+                        "body": decision.reply_body.strip(),
+                        # Routing changes "open" to the routed state below;
+                        # the answer keeps the state the agent chose for it.
+                        "next_state": decision.next_state,
+                        "documents": list(dict.fromkeys(e.document for e in evidence)),
+                    }
             elif all(r.error for r in retrievals):
                 corrections.append("answer despite every search failing: "
                                    "forced to route")
                 decision.action = Action.ROUTE
 
     if decision.action == Action.ROUTE:
-        if decision.reply_body or decision.reply_kind:
+        if decision._held_reply:
+            corrections.append("reply held back for the reviewer: "
+                               "not backed by the knowledge base")
+        elif decision.reply_body or decision.reply_kind:
             corrections.append("reply discarded: the action is route")
         decision.reply_body = None
         decision.reply_kind = None

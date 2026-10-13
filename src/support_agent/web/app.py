@@ -229,6 +229,30 @@ async def logout(request: Request, response: Response) -> dict:
 # review
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# users: who may do what (admins only)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/users")
+async def users(_: dict = Depends(auth.need("admin"))) -> dict:
+    rows = await run_in_threadpool(auth.list_users)
+    return {"users": [queries.jsonable_row(r) for r in rows],
+            "permissions": auth.PERMISSIONS,
+            "defaults": list(auth.DEFAULT_PERMISSIONS)}
+
+
+@app.patch("/api/users/{reviewer_id}")
+async def update_user(reviewer_id: int, payload: dict,
+                      admin: dict = Depends(auth.need("admin"))) -> dict:
+    allowed = {k: payload[k] for k in ("permissions", "is_admin", "is_active") if k in payload}
+    try:
+        row = await run_in_threadpool(auth.update_user, admin, reviewer_id, allowed)
+    except auth.AuthError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"id": reviewer_id, "is_admin": row["is_admin"], "is_active": row["is_active"],
+            "permissions": auth.granted(row)}
+
+
 @app.get("/api/options")
 async def options(_: dict = Depends(auth.require)) -> dict:
     """The values OTRS will accept. Dropdowns, not free text.
@@ -258,7 +282,7 @@ async def options(_: dict = Depends(auth.require)) -> dict:
 # ---------------------------------------------------------------------------
 
 @app.get("/api/team-scopes")
-async def get_team_scopes(_: dict = Depends(auth.require)) -> dict:
+async def get_team_scopes(_: dict = Depends(auth.need("team_scopes"))) -> dict:
     """The document in use, or nothing when none has been uploaded."""
     row = await run_in_threadpool(team_docs.current_scopes)
     return {"scopes": queries.jsonable(row) if row else None}
@@ -266,7 +290,7 @@ async def get_team_scopes(_: dict = Depends(auth.require)) -> dict:
 
 @app.post("/api/team-scopes")
 async def upload_team_scopes(file: UploadFile = File(...),
-                             reviewer: dict = Depends(auth.require)) -> dict:
+                             reviewer: dict = Depends(auth.need("team_scopes"))) -> dict:
     """Replace the team scopes with an uploaded file. The previous version is
     kept; this one is used from the next decision on."""
     raw = await file.read()
@@ -279,7 +303,7 @@ async def upload_team_scopes(file: UploadFile = File(...),
 
 
 @app.get("/api/team-scopes/download")
-async def download_team_scopes(_: dict = Depends(auth.require)) -> Response:
+async def download_team_scopes(_: dict = Depends(auth.need("team_scopes"))) -> Response:
     row = await run_in_threadpool(team_docs.current_scopes)
     if row is None:
         raise HTTPException(status_code=404, detail="no team scopes uploaded yet")
@@ -289,12 +313,12 @@ async def download_team_scopes(_: dict = Depends(auth.require)) -> Response:
 
 
 @app.get("/api/urgent-keywords")
-async def get_keywords(_: dict = Depends(auth.require)) -> list:
+async def get_keywords(_: dict = Depends(auth.need("urgent"))) -> list:
     return queries.jsonable(await run_in_threadpool(team_docs.keywords))
 
 
 @app.post("/api/urgent-keywords")
-async def add_keyword(payload: dict, reviewer: dict = Depends(auth.require)) -> dict:
+async def add_keyword(payload: dict, reviewer: dict = Depends(auth.need("urgent"))) -> dict:
     try:
         return await run_in_threadpool(team_docs.add_keyword, payload.get("keyword") or "",
                                        reviewer["id"])
@@ -303,7 +327,7 @@ async def add_keyword(payload: dict, reviewer: dict = Depends(auth.require)) -> 
 
 
 @app.delete("/api/urgent-keywords/{keyword_id}")
-async def remove_keyword(keyword_id: int, reviewer: dict = Depends(auth.require)) -> dict:
+async def remove_keyword(keyword_id: int, reviewer: dict = Depends(auth.need("urgent"))) -> dict:
     try:
         await run_in_threadpool(team_docs.remove_keyword, keyword_id, reviewer["id"])
     except team_docs.KnowledgeError as exc:
@@ -312,7 +336,7 @@ async def remove_keyword(keyword_id: int, reviewer: dict = Depends(auth.require)
 
 
 @app.get("/api/past-tickets/{ticket_number}")
-async def past_ticket(ticket_number: str, _: dict = Depends(auth.require)) -> dict:
+async def past_ticket(ticket_number: str, _: dict = Depends(auth.need("review"))) -> dict:
     """One closed ticket, whole: for the viewer behind a similar ticket or a
     junk match on the review page."""
     row = await run_in_threadpool(similar.past_ticket, ticket_number)
@@ -322,12 +346,12 @@ async def past_ticket(ticket_number: str, _: dict = Depends(auth.require)) -> di
 
 
 @app.get("/api/urgent-recipients")
-async def get_recipients(_: dict = Depends(auth.require)) -> list:
+async def get_recipients(_: dict = Depends(auth.need("urgent"))) -> list:
     return queries.jsonable(await run_in_threadpool(urgent.recipients))
 
 
 @app.post("/api/urgent-recipients")
-async def add_recipient(payload: dict, reviewer: dict = Depends(auth.require)) -> dict:
+async def add_recipient(payload: dict, reviewer: dict = Depends(auth.need("urgent"))) -> dict:
     try:
         return await run_in_threadpool(urgent.add_recipient, payload.get("email") or "",
                                        payload.get("name"), reviewer["id"])
@@ -336,7 +360,7 @@ async def add_recipient(payload: dict, reviewer: dict = Depends(auth.require)) -
 
 
 @app.delete("/api/urgent-recipients/{recipient_id}")
-async def remove_recipient(recipient_id: int, reviewer: dict = Depends(auth.require)) -> dict:
+async def remove_recipient(recipient_id: int, reviewer: dict = Depends(auth.need("urgent"))) -> dict:
     try:
         await run_in_threadpool(urgent.remove_recipient, recipient_id, reviewer["id"])
     except urgent.UrgentError as exc:
@@ -345,7 +369,7 @@ async def remove_recipient(recipient_id: int, reviewer: dict = Depends(auth.requ
 
 
 @app.get("/api/config/options")
-async def config_options(_: dict = Depends(auth.require)) -> dict:
+async def config_options(_: dict = Depends(auth.need("configuration"))) -> dict:
     """Every option, disabled ones included, for the Configuration page."""
     try:
         rows = await run_in_threadpool(agent_options.everything)
@@ -360,7 +384,7 @@ async def config_options(_: dict = Depends(auth.require)) -> dict:
 
 @app.put("/api/config/guidance/{kind}")
 async def set_guidance(kind: str, payload: dict,
-                       reviewer: dict = Depends(auth.require)) -> dict:
+                       reviewer: dict = Depends(auth.need("configuration"))) -> dict:
     """How the agent should choose this field. Required; used from the next
     ticket on."""
     try:
@@ -372,7 +396,7 @@ async def set_guidance(kind: str, payload: dict,
 
 @app.post("/api/config/options")
 async def add_option(payload: dict,
-                     reviewer: dict = Depends(auth.require)) -> dict:
+                     reviewer: dict = Depends(auth.need("configuration"))) -> dict:
     """Add a value. Nothing checks it against OTRS -- there is no call on their
     webservice that lists queues or SLAs -- so the page warns before adding."""
     try:
@@ -387,7 +411,7 @@ async def add_option(payload: dict,
 
 @app.patch("/api/config/options/{option_id}")
 async def update_option(option_id: int, payload: dict,
-                        reviewer: dict = Depends(auth.require)) -> dict:
+                        reviewer: dict = Depends(auth.need("configuration"))) -> dict:
     """Enable, disable, or change the description. Values are not renamed."""
     try:
         return await run_in_threadpool(
@@ -403,12 +427,12 @@ async def update_option(option_id: int, payload: dict,
 
 
 @app.get("/api/drafts")
-async def drafts(_: dict = Depends(auth.require)) -> list[dict]:
+async def drafts(_: dict = Depends(auth.need("review"))) -> list[dict]:
     return await run_in_threadpool(queries.pending_drafts)
 
 
 @app.get("/api/drafts/{draft_id}")
-async def draft(draft_id: int, _: dict = Depends(auth.require)) -> dict:
+async def draft(draft_id: int, _: dict = Depends(auth.need("review"))) -> dict:
     found = await run_in_threadpool(queries.draft, draft_id)
     if found is None:
         raise HTTPException(status_code=404, detail="no such draft")
@@ -424,7 +448,7 @@ async def draft(draft_id: int, _: dict = Depends(auth.require)) -> dict:
 
 @app.post("/api/drafts/{draft_id}/approve")
 async def approve_draft(draft_id: int, payload: dict,
-                        reviewer: dict = Depends(auth.require)) -> dict:
+                        reviewer: dict = Depends(auth.need("review"))) -> dict:
     """Approve, with or without changes.
 
     Anything in `final` overrides the agent's value; a justification is required
@@ -451,9 +475,21 @@ async def approve_draft(draft_id: int, payload: dict,
             "changed_fields": result.changed_fields}
 
 
+@app.post("/api/drafts/{draft_id}/not-ours")
+async def not_ours(draft_id: int, payload: dict,
+                   reviewer: dict = Depends(auth.need("review"))) -> dict:
+    """Another product's ticket: set aside here, nothing written to OTRS."""
+    try:
+        await run_in_threadpool(review.not_ours, draft_id, reviewer["id"],
+                                payload.get("comment"))
+    except review.NotPending as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    return {"draft_id": draft_id, "status": "other_product"}
+
+
 @app.post("/api/drafts/{draft_id}/reject")
 async def reject_draft(draft_id: int, payload: dict,
-                       reviewer: dict = Depends(auth.require)) -> dict:
+                       reviewer: dict = Depends(auth.need("review"))) -> dict:
     try:
         review_id = await run_in_threadpool(
             review.reject, draft_id, reviewer["id"],
@@ -467,7 +503,7 @@ async def reject_draft(draft_id: int, payload: dict,
 
 
 @app.post("/api/outbox/send")
-async def send_outbox(_: dict = Depends(auth.require)) -> dict:
+async def send_outbox(_: dict = Depends(auth.need("review"))) -> dict:
     """Write approved drafts to OTRS. Refuses while DRY_RUN is on."""
     sent, failed = await run_in_threadpool(review.send_pending)
     return {"sent": sent, "failed": failed, "dry_run": get_settings().dry_run}
@@ -478,7 +514,7 @@ async def send_outbox(_: dict = Depends(auth.require)) -> dict:
 # ---------------------------------------------------------------------------
 
 @app.get("/api/dashboard")
-async def dashboard(_: dict = Depends(auth.require)) -> dict:
+async def dashboard(_: dict = Depends(auth.need("dashboard"))) -> dict:
     return await run_in_threadpool(queries.dashboard)
 
 
@@ -487,13 +523,13 @@ async def dashboard(_: dict = Depends(auth.require)) -> dict:
 # ---------------------------------------------------------------------------
 
 @app.get("/api/documents")
-async def documents(_: dict = Depends(auth.require)) -> list[dict]:
+async def documents(_: dict = Depends(auth.need("knowledge"))) -> list[dict]:
     return await run_in_threadpool(queries.documents)
 
 
 @app.post("/api/documents")
 async def upload(file: UploadFile = File(...),
-                 reviewer: dict = Depends(auth.require)) -> dict:
+                 reviewer: dict = Depends(auth.need("knowledge"))) -> dict:
     """Take a file and index it.
 
     Indexing is slow -- chunking is model-driven, so a large document is
@@ -586,7 +622,7 @@ async def _index(document_id: int, path: Path) -> None:
 
 @app.get("/api/documents/{document_id}/download")
 async def download_document(document_id: int,
-                            _: dict = Depends(auth.require)) -> FileResponse:
+                            _: dict = Depends(auth.need("knowledge"))) -> FileResponse:
     """The file as it was uploaded, under its original name."""
     row = await run_in_threadpool(
         postgres.query_one,
@@ -607,7 +643,7 @@ async def download_document(document_id: int,
 
 @app.delete("/api/documents/{document_id}")
 async def delete_document(document_id: int,
-                          _: dict = Depends(auth.require)) -> dict:
+                          _: dict = Depends(auth.need("knowledge"))) -> dict:
     """Remove a document everywhere it exists.
 
     Refuses while the document is still indexing. Deleting mid-index used to
@@ -674,14 +710,14 @@ async def delete_document(document_id: int,
 # ---------------------------------------------------------------------------
 
 @app.get("/api/tables")
-async def tables(_: dict = Depends(auth.require)) -> list[dict]:
+async def tables(_: dict = Depends(auth.need("tables"))) -> list[dict]:
     return await run_in_threadpool(queries.table_index)
 
 
 @app.get("/api/tables/{table}")
 async def table(table: str, limit: int = Query(50, le=200), offset: int = 0,
                 search: str | None = None,
-                _: dict = Depends(auth.require)) -> dict:
+                _: dict = Depends(auth.need("tables"))) -> dict:
     try:
         return await run_in_threadpool(queries.table_rows, table,
                                        limit=limit, offset=offset, search=search)
@@ -691,7 +727,7 @@ async def table(table: str, limit: int = Query(50, le=200), offset: int = 0,
 
 @app.get("/api/tables/{table}/{row_id}")
 async def table_row(table: str, row_id: int,
-                    _: dict = Depends(auth.require)) -> dict:
+                    _: dict = Depends(auth.need("tables"))) -> dict:
     try:
         row = await run_in_threadpool(queries.table_row, table, row_id)
     except ValueError as exc:
@@ -767,7 +803,7 @@ async def ingest(body: IngestRequest) -> JSONResponse:
 
 @app.get("/tickets/{ticket_id}/context", response_class=PlainTextResponse)
 async def ticket_context(ticket_id: int,
-                         _: dict = Depends(auth.require)) -> str:
+                         _: dict = Depends(auth.need("review"))) -> str:
     """What the orchestrator reads. Here for eyes, not for machines."""
     context = await run_in_threadpool(context_builder.build, ticket_id)
     return context.render()
@@ -784,6 +820,7 @@ async def health() -> dict:
         # What the console needs to show this product's names short.
         "product": {"name": settings.product_name,
                     "queue_prefix": settings.queue_prefix or "",
-                    "subtype_prefix": settings.subtype_prefix or ""},
+                    "subtype_prefix": settings.subtype_prefix or "",
+                    "own_services": settings.own_service_list},
         "loops": runtime.status(),
     }

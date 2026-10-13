@@ -66,14 +66,14 @@ def _host() -> str:
 
 
 @router.get("")
-async def status(_: dict = Depends(auth.require)) -> dict:
+async def status(_: dict = Depends(auth.need("testing"))) -> dict:
     blocked = _blocked()
     return {"on": get_settings().testing_page, "enabled": blocked is None, "reason": blocked,
             "queue": get_settings().otrs_intake_queue, "otrs": _host()}
 
 
 @router.get("/tickets")
-async def recent(_: dict = Depends(auth.require)) -> list[dict]:
+async def recent(_: dict = Depends(auth.need("testing"))) -> list[dict]:
     """Test tickets sent from this page, newest first, with how far each got."""
     rows = await run_in_threadpool(postgres.query, """
         SELECT a.created_at, a.reasoning AS title,
@@ -93,7 +93,7 @@ async def recent(_: dict = Depends(auth.require)) -> list[dict]:
 
 
 @router.post("/tickets")
-async def create(payload: NewTicket, reviewer: dict = Depends(auth.require)) -> dict:
+async def create(payload: NewTicket, reviewer: dict = Depends(auth.need("testing"))) -> dict:
     blocked = _blocked()
     if blocked:
         raise HTTPException(status_code=403, detail=blocked)

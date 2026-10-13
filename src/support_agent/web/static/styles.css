@@ -1866,3 +1866,53 @@ textarea.cfg-desc {
 .cfg-row { align-items: start; }
 
 
+
+/* ---------------------------------------------------------------- another product's drafts
+ * Below this product's own, under their own heading: the agent thinks they
+ * belong to the other product's console. Dimmed, so this product's work leads.
+ */
+.others-head { margin-top: 18px; display: grid; gap: 4px; }
+.others-head .section-label { margin: 0; }
+.others-hint { font-size: 11.5px; color: var(--faint); margin: 0 0 4px; }
+.others-head ~ .draft-card { opacity: .72; }
+.others-head ~ .draft-card:hover, .others-head ~ .draft-card[aria-current="true"] { opacity: 1; }
+.others-none { font-size: 12px; color: var(--faint); padding: 10px 4px; }
+.pill.other { border-color: var(--violet); color: var(--violet); }
+
+/* ---------------------------------------------------------------- users
+ * One row per person, one column per permission. Wide, so it scrolls
+ * sideways on its own rather than pushing the page.
+ */
+.users-wrap { overflow-x: auto; border: 1px solid var(--rule); border-radius: var(--r, 8px); background: var(--panel); }
+table.users { border-collapse: collapse; width: 100%; min-width: 980px; font-size: 12.5px; }
+table.users th { font: 600 10px var(--mono); letter-spacing: .1em; text-transform: uppercase;
+  color: var(--faint); text-align: left; padding: 11px 12px; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+table.users td { padding: 10px 12px; border-bottom: 1px solid var(--rule-soft); vertical-align: middle; }
+table.users tr:last-child td { border-bottom: none; }
+table.users .perm { text-align: center; }
+table.users th.admin { color: var(--amber); }
+table.users input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--seal); cursor: pointer; }
+table.users input[type=checkbox]:disabled { cursor: default; opacity: .55; }
+table.users .who-cell .name { font-weight: 600; }
+table.users .who-cell .sub { font: 11px var(--mono); color: var(--faint); margin-top: 2px; }
+table.users .who-cell .sub.online { color: var(--seal); }
+table.users tr.inactive td { opacity: .5; }
+
+/* ---------------------------------------------------------------- review: held reply
+ * An answer the validator routed because its evidence was only inferential.
+ * Amber: waiting on a person to check it.
+ */
+.held-box {
+  border: 1px solid var(--rule); border-left: 3px solid var(--amber);
+  border-radius: 8px; padding: 10px 12px; background: var(--raise);
+  display: grid; gap: 8px; justify-items: start;
+}
+.held-box .message { justify-self: stretch; border-left-color: var(--amber); }
+.held-label { font: 10px var(--mono); letter-spacing: .12em; color: var(--amber); }
+.held-why { font-size: 12.5px; color: var(--text); }
+.held-docs { font: 11px var(--mono); color: var(--faint); overflow-wrap: anywhere; }
+.held-warn {
+  font: 10px var(--mono); letter-spacing: .08em; color: var(--amber);
+  border-left: 3px solid var(--amber); padding: 6px 10px; background: var(--raise);
+  border-radius: 6px;
+}

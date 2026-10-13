@@ -19,5 +19,6 @@ needs none of them. Another product sets each one in its own `.env`.
 | `QUEUE_PREFIX` | `Ole5 New::` | Left off queue names where the console shows them short |
 | `SUBTYPE_PREFIX` | `OLE5::` | Left off subtype names the same way |
 | `SESSION_COOKIE` | `ole5_session` | The sign-in cookie. Two products on one host need different names |
+| `OWN_SERVICES` | unset (later `OLE5 / Ole5 New`) | The Service values that are this product's. Set it in both products' `.env` once two agents read the same intake queue: each console then lists the other product's drafts in their own section, with a Not ours button. Unset, every draft is listed together |
 | `JUNK_THRESHOLD`, `JUNK_FLOOR`, `JUNK_MARGIN`, `SIMILAR_MIN_SCORE` | as calibrated | Measured on OLE5's tickets. Recalibrate for another product |
 | `WEEKLY_REPORT_RECIPIENTS` | the OLE5 team | Who gets the weekly report |

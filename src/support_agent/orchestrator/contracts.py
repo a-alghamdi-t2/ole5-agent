@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from enum import Enum
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 
 class Action(str, Enum):
@@ -81,3 +81,9 @@ class Decision(BaseModel):
     confidence: Confidence
     reasoning: str = Field(description="Why this decision, in two or three sentences")
     queue_reason: str = Field(description="One line: why this queue and not the others")
+
+    # Set by the validator, never by the model (a private attribute is not in
+    # the schema the model is shown). An answer the validator turned into a
+    # route because its evidence was only inferential: kept for the reviewer,
+    # who can check it and send it, instead of being thrown away.
+    _held_reply: dict | None = PrivateAttr(default=None)

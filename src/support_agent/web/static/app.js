@@ -19,11 +19,48 @@ const el = (tag, cls, text) => {
 
 const RTL = /[؀-ۿ]/;
 
+// What the signed-in person may do. The server checks every request; this
+// only decides what the page shows.
+function can(p) {
+  const r = state.reviewer || {};
+  return !!r.is_admin || (p !== "admin" && (r.permissions || []).includes(p));
+}
+const TAB_NEEDS = {
+  review: ["review"], knowledge: ["knowledge", "team_scopes", "urgent"],
+  dashboard: ["dashboard"], tables: ["tables"], config: ["configuration"], users: ["admin"],
+};
+const KTAB_NEEDS = { kb: "knowledge", scopes: "team_scopes", keywords: "urgent" };
+
+// Show only the pages and Knowledge sections this person may use, and open
+// the first of them.
+function applyPermissions() {
+  let first = null;
+  document.querySelectorAll(".tab[data-tab]").forEach((t) => {
+    const needs = TAB_NEEDS[t.dataset.tab];
+    if (!needs) return;  // the Testing tab decides for itself
+    t.hidden = !needs.some(can);
+    if (!t.hidden && !first) first = t.dataset.tab;
+  });
+  document.querySelectorAll("#ktabs [data-ktab]").forEach((b) => {
+    b.hidden = !can(KTAB_NEEDS[b.dataset.ktab]);
+  });
+  const ks = Object.keys(KTAB_NEEDS).filter((k) => can(KTAB_NEEDS[k]));
+  if (ks.length && !ks.includes(state.ktab)) state.ktab = ks[0];
+  return first;
+}
+
 // The product's queue and subtype names, shown without the prefix they all
 // share ("Ole5 New::Product" -> "Product"). Set from /api/health at start.
 function shortQueue(q) {
   const p = state.product.queue_prefix;
   return p && (q || "").startsWith(p) ? q.slice(p.length) : (q || "");
+}
+// Another product's draft: the agent chose a Service that is not this
+// product's (OWN_SERVICES). Off when OWN_SERVICES is unset: then every draft
+// is this product's, as it always was.
+function otherProduct(d) {
+  const own = (state.product.own_services || []).map((v) => v.toLowerCase());
+  return own.length > 0 && !!d.service && !own.includes(d.service.toLowerCase());
 }
 function shortSubtype(s) {
   const p = state.product.subtype_prefix;
@@ -259,7 +296,7 @@ const state = {
   search: "",
   cfgKind: "queue",
   ktab: "kb",
-  product: { name: "", queue_prefix: "", subtype_prefix: "" },
+  product: { name: "", queue_prefix: "", subtype_prefix: "", own_services: [] },
 };
 
 // Ordered list of pending draft IDs currently shown in the list.
@@ -431,6 +468,7 @@ async function refresh() {
     else if (state.tab === "dashboard") await loadDashboard();
     else if (state.tab === "tables") await loadTableIndex();
     else if (state.tab === "config") await loadConfig();
+    else if (state.tab === "users") await loadUsers();
   } finally {
     if (tab) tab.classList.remove("refreshing");
   }
@@ -506,15 +544,20 @@ function notePending(drafts) {
 }
 
 async function updatePending() {
-  try { notePending(await api("/api/drafts")); } catch {}
+  if (!can("review")) return;
+  try { notePending((await api("/api/drafts")).filter((d) => !otherProduct(d))); } catch {}
 }
 
 async function loadDrafts() {
   const drafts = await api("/api/drafts");
+  // This product's first; another product's below, in their own section.
+  const mine = drafts.filter((d) => !otherProduct(d));
+  const others = drafts.filter(otherProduct);
 
   // Track IDs for J/K navigation, in display order (newest first).
-  draftIds = drafts.map((d) => d.id);
-  notePending(drafts);
+  draftIds = [...mine, ...others].map((d) => d.id);
+  // The badge and the sound are for this product's drafts only.
+  notePending(mine);
 
   // The open draft left the list: someone reviewed it, a new message replaced
   // it, or its ticket was moved or closed in OTRS. Checked before anything
@@ -551,7 +594,7 @@ async function loadDrafts() {
     return;
   }
 
-  for (const d of drafts) {
+  const card = (d) => {
     const card = el("div", "draft-card");
     card.setAttribute("aria-current", String(d.id === state.draftId));
 
@@ -563,6 +606,7 @@ async function loadDrafts() {
     // Urgent drafts are listed first, and marked so they are seen at once.
     if (d.urgent) top.append(el("span", "pill urgent", "urgent"));
     if (d.junk) top.append(el("span", "pill junk", "junk?"));
+    if (otherProduct(d)) top.append(el("span", "pill other", d.service));
 
     const title = el("div", "title", d.title || "(no subject)");
     title.dir = dir(d.title);
@@ -575,9 +619,25 @@ async function loadDrafts() {
 
     card.append(top, title, meta);
     card.addEventListener("click", () => openDraft(d.id));
-    list.append(card);
-  }
+    return card;
+  };
 
+  if (!mine.length) {
+    list.append(el("div", "others-none", "Nothing waiting for this product."));
+  }
+  for (const d of mine) list.append(card(d));
+
+  if (others.length) {
+    const services = [...new Set(others.map((d) => d.service))];
+    const head = el("div", "others-head");
+    head.append(
+      el("div", "section-label",
+         `Probably ${services.length === 1 ? services[0] : "another product"} · ${others.length}`),
+      el("p", "others-hint",
+         "The agent thinks these are another product's. Approve one if it is yours; otherwise mark it Not ours."));
+    list.append(head);
+    for (const d of others) list.append(card(d));
+  }
 }
 
 async function openDraft(id) {
@@ -613,6 +673,9 @@ function field(key, label, value, options) {
   wrap.dataset.key = key;
   wrap.append(el("label", null, label));
 
+  // A repaint keeps what the reviewer already changed.
+  const shown = key in state.edits ? state.edits[key] : value;
+
   let input;
   if (options) {
     input = el("select");
@@ -629,12 +692,12 @@ function field(key, label, value, options) {
     for (const option of options) {
       const o = el("option", null, option);
       o.value = option;
-      if (option === value) o.selected = true;
+      if (option === shown) o.selected = true;
       input.append(o);
     }
   } else if (key === "reply_body") {
     input = el("textarea");
-    input.value = value || "";
+    input.value = shown || "";
     // dir="auto" lets the browser resolve direction per-paragraph as
     // the reviewer types -- an Arabic reply mixed with an English
     // signature renders both correctly. The CSS rule on .field
@@ -643,14 +706,16 @@ function field(key, label, value, options) {
   } else {
     input = el("input");
     input.type = "text";
-    input.value = value == null ? "" : value;
+    input.value = shown == null ? "" : shown;
   }
 
   const original = value == null ? "" : String(value);
+  wrap.classList.toggle("changed", key in state.edits);
   input.addEventListener("input", () => {
     if (input.value === original) delete state.edits[key];
     else state.edits[key] = input.value;
     wrap.classList.toggle("changed", input.value !== original);
+    if (key === "action") return switchAction(input.value);
     paintActions();
   });
   // Textareas auto-grow to fit content. The listener fires on every
@@ -991,9 +1056,18 @@ function paintDraft() {
     right.append(chips);
   }
 
+  const held = heldSection(d);
+  if (held) right.append(el("div", "section-label", "Reply held back"), held);
+
   const fields = el("div", "fields");
   fields.append(field("action", "Action", d.action, o.action));
-  if (d.action === "answer") {
+  const action = state.edits.action || d.action;
+  if (action === "answer") {
+    if (d.action !== "answer" && (d.evidence || {}).held_reply &&
+        state.edits.reply_body === d.evidence.held_reply.body) {
+      fields.append(el("div", "held-warn",
+        "Not backed by the knowledge base: check before sending."));
+    }
     fields.append(field("reply_kind", "Reply kind", d.reply_kind, o.reply_kind));
     fields.append(field("reply_body", "SUGGESTED REPLY", d.reply_body));
   }
@@ -1087,6 +1161,11 @@ function paintDraft() {
     Object.assign(el("button", "btn approve", "Approve"), { id: "do-approve" }),
     Object.assign(el("button", "btn reject", "Reject"), { id: "do-reject" })
   );
+  // Only where two products share the intake queue (OWN_SERVICES set).
+  if ((state.product.own_services || []).length) {
+    actionsRow.append(Object.assign(el("button", "btn ghost", "Not ours"),
+      { id: "do-not-ours", title: "Another product's ticket. Nothing is written to OTRS." }));
+  }
   actions.append(whyInput, actionsRow);
   panel.append(actions);
 
@@ -1097,7 +1176,61 @@ function paintDraft() {
 
   $("do-approve").addEventListener("click", approveDraft);
   $("do-reject").addEventListener("click", rejectDraft);
+  if ($("do-not-ours")) $("do-not-ours").addEventListener("click", notOursDraft);
   paintActions();
+}
+
+// The reply an answer needs, or none for a route. Switching a route to an
+// answer starts from the reply the validator held back, when there is one.
+function switchAction(action) {
+  const d = state.draft;
+  const held = (d.evidence || {}).held_reply;
+  if (action === "answer" && d.action !== "answer" && held && !("reply_body" in state.edits)) {
+    state.edits.reply_kind = held.kind || "answer";
+    state.edits.reply_body = held.body;
+    if (held.next_state && held.next_state !== d.next_state) state.edits.next_state = held.next_state;
+  }
+  if (action === d.action) {
+    delete state.edits.reply_kind;
+    delete state.edits.reply_body;
+    if (held && state.edits.next_state === held.next_state) delete state.edits.next_state;
+  }
+  repaintDraft();
+}
+
+// paintDraft again without losing the justification already typed.
+function repaintDraft() {
+  const why = $("why") ? $("why").value : "";
+  paintDraft();
+  $("why").value = why;
+  autoGrowTextarea($("why"));
+}
+
+// An answer the validator turned into a route: its evidence was only
+// related documents, not a passage that says it. Kept for the reviewer, who
+// can check it and send it -- the agent may not.
+function heldSection(d) {
+  const held = (d.evidence || {}).held_reply;
+  const action = state.edits.action || d.action;
+  if (!held || d.action !== "route" || action !== "route") return null;
+  const box = el("div", "held-box");
+  box.append(el("div", "held-label", "NOT BACKED BY THE KNOWLEDGE BASE"));
+  box.append(el("div", "held-why",
+    "The agent drafted this answer, but nothing in the knowledge base says it " +
+    "directly, so the ticket was routed. Check it before sending."));
+  if ((held.documents || []).length) {
+    box.append(el("div", "held-docs", "Inferred from: " + held.documents.join(", ")));
+  }
+  const body = el("div", "message", held.body || "");
+  body.dir = dir(held.body || "");
+  const use = el("button", "btn ghost", "Use this reply");
+  use.title = "Switch to Answer with this reply. You can still edit it.";
+  use.addEventListener("click", () => {
+    state.edits.action = "answer";
+    switchAction("answer");
+  });
+  box.append(body, use);
+  return box;
 }
 
 function paintActions() {
@@ -1162,6 +1295,76 @@ async function rejectDraft() {
   } catch (err) {
     toast(err.message, "bad");
   }
+}
+
+async function notOursDraft() {
+  try {
+    await post(`/api/drafts/${state.draftId}/not-ours`, { comment: $("why").value.trim() || null });
+    toast("Set aside as another product's", "good");
+    await afterDecision(state.draftId);
+  } catch (err) {
+    toast(err.message, "bad");
+  }
+}
+
+// ---------------------------------------------------------------- users
+
+// Who is online changes without anything else moving, so the page refreshes
+// itself while it is open -- unless a box is being clicked right now.
+setInterval(() => {
+  if (state.tab === "users" && !document.querySelector("#users input:focus")) loadUsers();
+}, 30000);
+
+async function loadUsers() {
+  const data = await api("/api/users");
+  const perms = Object.entries(data.permissions);  // [key, label]
+  const box = $("users");
+  const table = el("table", "users");
+  const head = el("tr");
+  head.append(el("th", null, "Person"));
+  for (const [, label] of perms) head.append(el("th", "perm", label));
+  head.append(el("th", "perm admin", "Admin"), el("th", "perm", "Active"));
+  table.append(el("thead")); table.tHead.append(head);
+  const body = el("tbody");
+
+  for (const u of data.users) {
+    const me = u.id === state.reviewer.id;
+    const tr = el("tr", u.is_active ? "" : "inactive");
+    const who = el("td", "who-cell");
+    who.append(el("div", "name", (u.display_name || u.email) + (me ? " (you)" : "")),
+               el("div", "sub", u.email),
+               el("div", "sub " + (u.online ? "online" : ""),
+                  u.online ? "Online now" : u.last_seen ? "Last seen " + fmtTime(u.last_seen) : "Never signed in"));
+    tr.append(who);
+
+    const cell = (checked, disabled, title, onChange) => {
+      const td = el("td", "perm");
+      const c = el("input"); c.type = "checkbox"; c.checked = checked; c.disabled = disabled;
+      if (title) c.title = title;
+      c.addEventListener("change", () => onChange(c.checked, c));
+      td.append(c); return td;
+    };
+    const save = async (change, c) => {
+      try {
+        await api("/api/users/" + u.id, { method: "PATCH",
+          headers: { "Content-Type": "application/json" }, body: JSON.stringify(change) });
+        toast("Saved", "good");
+      } catch (err) { toast(err.message, "bad"); }
+      loadUsers();
+    };
+    for (const [key, label] of perms) {
+      tr.append(cell(u.is_admin || u.permissions.includes(key), u.is_admin,
+        u.is_admin ? "An admin can do everything" : label,
+        (on) => save({ permissions: on ? [...u.permissions, key] : u.permissions.filter((p) => p !== key) })));
+    }
+    tr.append(cell(u.is_admin, me, me ? "You cannot remove your own admin" : "Can do everything, including this page",
+                  (on) => save({ is_admin: on })));
+    tr.append(cell(u.is_active, me, me ? "You cannot switch off your own account" : "Off: cannot sign in",
+                  (on) => save({ is_active: on })));
+    body.append(tr);
+  }
+  table.append(body);
+  box.replaceChildren(table);
 }
 
 // ---------------------------------------------------------------- knowledge
@@ -1473,6 +1676,8 @@ function renderPipeline(d) {
     // alongside Rejected as the second 'reviewer got involved' outcome.
     { n: d.reviews.edited ?? 0, l: "Edited" },
   ];
+  // Only where two products share the intake queue and some were set aside.
+  if (d.drafts.other_product) stages.push({ n: d.drafts.other_product, l: "Not ours" });
 
   stages.forEach((s, i) => {
     const stage = el("div", "pipe-stage" + (s.hot ? " hot" : ""));
@@ -2467,7 +2672,9 @@ async function start() {
   $("dry-run").hidden = !health.dry_run;
   if (health.product) state.product = health.product;
 
-  refresh();
+  const first = applyPermissions();
+  if (first) switchTo(first);
+  else document.querySelectorAll(".page").forEach((p) => { p.hidden = p.id !== "page-none"; });
   listen();
 
   // Opened from a link to one draft (the urgent email has one), or pointed
@@ -2477,6 +2684,7 @@ async function start() {
 }
 
 function openLinkedDraft() {
+  if (!can("review")) return;
   const linked = location.hash.match(/^#draft-(\d+)$/);
   if (!linked || Number(linked[1]) === state.draftId) return;
   if (state.tab !== "review") {

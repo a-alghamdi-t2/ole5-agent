@@ -87,6 +87,7 @@ def register(email: str, password: str, display_name: str | None = None) -> int:
         """,
         (email, display_name or email.split("@")[0], hash_password(password)),
     )
+    _admin_if_none(row["id"])
     log.info("reviewer registered", extra={"email": email})
     return row["id"]
 
@@ -183,6 +184,7 @@ def finish_signup(email: str, code: str) -> int:
     new = postgres.query_one(
         "INSERT INTO reviewers (email, display_name, password_hash) VALUES (%s, %s, %s) RETURNING id",
         (email, row["display_name"] or email.split("@")[0], row["password_hash"]))
+    _admin_if_none(new["id"])
     postgres.execute("DELETE FROM signup_codes WHERE email = %s", (email,))
     log.info("reviewer registered", extra={"email": email})
     return new["id"]
@@ -322,7 +324,7 @@ def reviewer_for(token: str | None) -> dict | None:
         return None
     row = postgres.query_one(
         """
-        SELECT r.id, r.email, r.display_name, s.expires_at
+        SELECT r.id, r.email, r.display_name, r.is_admin, r.permissions, s.expires_at
         FROM sessions s JOIN reviewers r ON r.id = s.reviewer_id
         WHERE s.token = %s AND r.is_active
         """,
@@ -336,8 +338,16 @@ def reviewer_for(token: str | None) -> dict | None:
 
     postgres.execute("UPDATE sessions SET last_seen = now() WHERE token = %s",
                      (token,))
+    # Kept on the account too, so signing out does not erase it. At most once
+    # a minute: every request passes through here.
+    postgres.execute(
+        "UPDATE reviewers SET last_seen_at = now() WHERE id = %s "
+        "AND (last_seen_at IS NULL OR last_seen_at < now() - interval '1 minute')",
+        (row["id"],))
     return {"id": row["id"], "email": row["email"],
-            "display_name": row["display_name"]}
+            "display_name": row["display_name"],
+            "is_admin": bool(row["is_admin"]),
+            "permissions": granted(row)}
 
 
 def require(request: Request) -> dict:
@@ -352,3 +362,131 @@ def anyone_registered() -> bool:
     """False before the first sign-up, which is what opens the sign-up form."""
     row = postgres.query_one("SELECT count(*) AS n FROM reviewers")
     return bool(row and row["n"])
+
+# ---------------------------------------------------------------------------
+# permissions
+# ---------------------------------------------------------------------------
+#
+# Each person has the permissions an admin ticked on the Users page; an admin
+# has all of them. Checked here, on the server, for every request -- the page
+# hides what someone cannot use, but hiding is not what stops them.
+
+PERMISSIONS: dict[str, str] = {
+    "review": "Review",
+    "dashboard": "Dashboard",
+    "tables": "Tables",
+    "knowledge": "Knowledge base",
+    "team_scopes": "Team scopes",
+    "urgent": "Urgent",
+    "configuration": "Configuration",
+    "testing": "Testing",
+}
+DEFAULT_PERMISSIONS = ("review", "tables")
+
+
+def granted(row: dict) -> list[str]:
+    """What a reviewer may do, in a fixed order. An admin may do everything."""
+    if row.get("is_admin"):
+        return list(PERMISSIONS)
+    have = set(row.get("permissions") or [])
+    return [p for p in PERMISSIONS if p in have]
+
+
+def need(permission: str):
+    """FastAPI dependency: signed in, and allowed to do this. 403 otherwise."""
+    label = PERMISSIONS[permission] if permission in PERMISSIONS else permission
+
+    def dependency(request: Request) -> dict:
+        reviewer = require(request)
+        allowed = reviewer["is_admin"] if permission == "admin" \
+            else permission in reviewer["permissions"]
+        if not allowed:
+            raise HTTPException(status_code=403,
+                                detail=f"you do not have the {label} permission; ask an admin")
+        return reviewer
+
+    return dependency
+
+
+def _admin_if_none(reviewer_id: int) -> None:
+    """The first account in a database without an admin becomes its admin, so
+    a new console can always be set up by whoever signs up first."""
+    postgres.execute(
+        "UPDATE reviewers SET is_admin = true WHERE id = %s "
+        "AND NOT EXISTS (SELECT 1 FROM reviewers WHERE is_admin AND is_active)",
+        (reviewer_id,))
+
+
+def list_users() -> list[dict]:
+    """Everyone with an account, with when they were last seen."""
+    rows = postgres.query(
+        """
+        SELECT r.id, r.email, r.display_name, r.is_active, r.is_admin, r.permissions,
+               r.created_at,
+               r.last_seen_at AS last_seen,
+               EXISTS (SELECT 1 FROM sessions s WHERE s.reviewer_id = r.id
+                       AND s.expires_at > now()
+                       AND s.last_seen > now() - interval '15 minutes') AS online
+        FROM reviewers r
+        ORDER BY r.is_active DESC, r.display_name, r.email
+        """
+    )
+    for r in rows:
+        r["permissions"] = granted(r)
+    return rows
+
+
+def update_user(admin: dict, reviewer_id: int, changes: dict) -> dict:
+    """Change someone's permissions, admin flag or whether the account works.
+
+    An admin cannot take away their own admin or switch off their own account,
+    and there is always at least one active admin: no change here can lock
+    everyone out of the Users page.
+    """
+    row = postgres.query_one(
+        "SELECT id, email, is_active, is_admin, permissions FROM reviewers WHERE id = %s",
+        (reviewer_id,))
+    if row is None:
+        raise AuthError("no such account")
+
+    sets: dict = {}
+    if "permissions" in changes:
+        wanted = list(dict.fromkeys(changes["permissions"] or []))
+        unknown = [p for p in wanted if p not in PERMISSIONS]
+        if unknown:
+            raise AuthError(f"unknown permission: {', '.join(unknown)}")
+        sets["permissions"] = [p for p in PERMISSIONS if p in wanted]
+    for flag in ("is_admin", "is_active"):
+        if flag in changes:
+            sets[flag] = bool(changes[flag])
+
+    me = reviewer_id == admin["id"]
+    if me and sets.get("is_admin") is False:
+        raise AuthError("you cannot remove your own admin; another admin can")
+    if me and sets.get("is_active") is False:
+        raise AuthError("you cannot switch off your own account")
+    losing_admin = row["is_admin"] and row["is_active"] and (
+        sets.get("is_admin") is False or sets.get("is_active") is False)
+    if losing_admin:
+        others = postgres.query_one(
+            "SELECT count(*) AS n FROM reviewers WHERE is_admin AND is_active AND id <> %s",
+            (reviewer_id,))["n"]
+        if not others:
+            raise AuthError("there must always be at least one admin")
+    if not sets:
+        return row
+
+    assignments = ", ".join(f"{k} = %s" for k in sets)
+    postgres.execute(f"UPDATE reviewers SET {assignments} WHERE id = %s",
+                     (*sets.values(), reviewer_id))
+    if sets.get("is_active") is False:
+        postgres.execute("DELETE FROM sessions WHERE reviewer_id = %s", (reviewer_id,))
+
+    from support_agent.db import audit
+    audit.record(actor="reviewer", action="permissions_changed", reasoning=row["email"],
+                 evidence={"by": admin["email"],
+                           "before": {"is_admin": row["is_admin"], "is_active": row["is_active"],
+                                      "permissions": list(row["permissions"] or [])},
+                           "after": sets})
+    log.info("permissions changed", extra={"reviewer": reviewer_id, "by": admin["id"]})
+    return {**row, **sets}

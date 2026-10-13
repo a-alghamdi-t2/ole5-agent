@@ -58,7 +58,8 @@
     <button class="tab" data-tab="dashboard"><span class="idx">03</span> Dashboard</button>
     <button class="tab" data-tab="tables"><span class="idx">04</span> Tables</button>
     <button class="tab" data-tab="config"><span class="idx">05</span> Configuration</button>
-    <button class="tab" data-tab="testing" id="testing-tab" hidden><span class="idx">06</span> Testing</button><!-- testing page -->
+    <button class="tab" data-tab="users" hidden><span class="idx">06</span> Users</button>
+    <button class="tab" data-tab="testing" id="testing-tab" hidden><span class="idx">07</span> Testing</button><!-- testing page -->
 
     <div class="rail-foot">
       <div class="who" id="who"></div>
@@ -199,7 +200,24 @@
       <div id="cfg-body"></div>
     </section>
 
-    <!-- ============================================== 06 · testing (testing page: remove this section to remove the page) -->
+    <!-- ============================================== 06 · users -->
+    <section class="page" id="page-users" hidden>
+      <header>
+        <h1>Users</h1>
+        <p>Who can do what. Tick a box to give someone a permission; it applies on their next click. An admin can do everything, including this page.</p>
+      </header>
+      <div class="users-wrap" id="users"></div>
+    </section>
+
+    <!-- no permissions at all -->
+    <section class="page" id="page-none" hidden>
+      <div class="empty">
+        <strong>Your account has no access yet</strong>
+        <span>Ask an admin to give you permissions on the Users page.</span>
+      </div>
+    </section>
+
+    <!-- ============================================== 07 · testing (testing page: remove this section to remove the page) -->
     <section class="page" id="page-testing" hidden>
       <header>
         <h1>Testing</h1>
