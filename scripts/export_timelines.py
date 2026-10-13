@@ -252,7 +252,8 @@ def _say_source() -> None:
     """Which OTRS this run reads from. The stored ticket ids belong to the
     instance the history was exported from; read another and nothing matches."""
     from support_agent.config import get_settings
-    print(f"reading from OTRS: {get_settings().otrs_base_url}\n")
+    s = get_settings()
+    print(f"reading from OTRS: {s.history_otrs_base_url or s.otrs_base_url}\n")
 
 
 def main() -> None:
