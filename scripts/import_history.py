@@ -6,6 +6,7 @@
     python scripts/import_history.py run --since 2024-01-01     # only those closed since then
     python scripts/import_history.py values                     # the field values the history uses
     python scripts/import_history.py values --out values.txt    # the same, into a file
+    python scripts/import_history.py values --since 2025-10-01  # only tickets closed since then: what is in use now
 
 The tickets closed in HISTORY_QUEUES, read from the history OTRS
 (HISTORY_OTRS_BASE_URL, or OTRS_BASE_URL when that is unset). Each is stored
@@ -152,12 +153,15 @@ def cmd_values(args: argparse.Namespace) -> None:
     """Every value each field takes in the stored history, most used first:
     what the Configuration page should offer."""
     lines: list[str] = []
-    n = postgres.query_one("SELECT count(*) AS n FROM closed_tickets")["n"]
-    lines.append(f"{n} closed tickets\n")
+    where, params = "", ()
+    if args.since:
+        where, params = "WHERE otrs_closed_at >= %s", (_since(args.since),)
+    n = postgres.query_one(f"SELECT count(*) AS n FROM closed_tickets {where}", params)["n"]
+    lines.append(f"{n} closed tickets" + (f" closed since {args.since}" if args.since else "") + "\n")
     for field in FIELDS:
         rows = postgres.query(
-            f"SELECT coalesce({field}, '(empty)') AS v, count(*) AS n FROM closed_tickets "
-            f"GROUP BY 1 ORDER BY 2 DESC, 1")
+            f"SELECT coalesce({field}, '(empty)') AS v, count(*) AS n FROM closed_tickets {where} "
+            f"GROUP BY 1 ORDER BY 2 DESC, 1", params)
         lines.append(field.upper())
         lines += [f"  {r['n']:6}  {r['v']}" for r in rows]
         lines.append("")
@@ -180,6 +184,7 @@ def main() -> None:
     r.add_argument("--limit", type=int)
     v = sub.add_parser("values")
     v.add_argument("--out")
+    v.add_argument("--since", help="only tickets closed since this date, 2025-10-01")
     args = ap.parse_args()
     try:
         {"count": cmd_count, "run": cmd_run, "values": cmd_values}[args.cmd](args)
