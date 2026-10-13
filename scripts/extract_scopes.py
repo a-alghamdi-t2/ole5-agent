@@ -2,6 +2,10 @@
 
     python scripts/extract_scopes.py --try 2026022682000639     # one ticket through the model; stores nothing
     python scripts/extract_scopes.py --limit 20                 # a batch, stored
+    python scripts/extract_scopes.py --moved-only               # only tickets that moved between queues
+    python scripts/extract_scopes.py --per-team 150             # up to 150 of each team's most recent
+    python scripts/extract_scopes.py --best 2500 --since 2025-01-01 --show-pick   # which 2500 are worth most; no model call
+    python scripts/extract_scopes.py --best 2500 --since 2025-01-01               # those, stored (support_agent/history/pick.py)
     python scripts/extract_scopes.py                            # every ticket not done yet
     python scripts/extract_scopes.py --redo-fallback            # the fallback's results, again with the main model
     python scripts/extract_scopes.py --stats
@@ -45,12 +49,51 @@ def cmd_try(number: str) -> None:
     print(f"\nwritten by {meta['model']}{fell}, {meta['latency_ms'] / 1000:.1f}s. Nothing stored.")
 
 
+def _per_team(rows: list[dict], n: int) -> list[dict]:
+    """Up to n of each team's most recent tickets: those closed in the team's
+    queue or that passed through it. A ticket two teams worked on counts for
+    both and is extracted once. Most recent first, as the rows come."""
+    picked: dict[int, dict] = {}
+    for queue, key in scopes.team_map().items():
+        count = 0
+        for r in rows:
+            if count >= n:
+                break
+            if r["queue"] == queue or queue in (r["queue_path"] or []):
+                count += 1
+                picked.setdefault(r["id"], r)
+        print(f"  {key:24} {count} tickets")
+    order = {r["id"]: i for i, r in enumerate(rows)}
+    return sorted(picked.values(), key=lambda r: order[r["id"]])
+
+
+def _best(args: argparse.Namespace) -> list[dict]:
+    """The --best N tickets (history/pick.py), those not done yet unless --redo."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from support_agent.history import pick
+
+    since = (datetime.strptime(args.since, "%Y-%m-%d").replace(tzinfo=ZoneInfo("Asia/Riyadh"))
+             if args.since else None)
+    chosen, summary = pick.best(args.best, since)
+    pick.print_summary(summary)
+    if args.show_pick:
+        return []
+    if not args.redo:
+        done = {r["id"] for r in postgres.query("SELECT DISTINCT closed_ticket_id AS id FROM ticket_scopes")}
+        chosen = [r for r in chosen if r["id"] not in done]
+    return chosen[:args.limit] if args.limit else chosen
+
+
 def cmd_run(args: argparse.Namespace) -> None:
     sql = f"""
-        SELECT t.id, t.ticket_number FROM ticket_timelines tl
+        SELECT t.id, t.ticket_number, t.queue, tl.queue_path FROM ticket_timelines tl
         JOIN closed_tickets t ON t.id = tl.closed_ticket_id
         WHERE {NOT_JUNK} AND jsonb_array_length(tl.entries) > 0
     """
+    if args.moved_only:
+        sql += " AND cardinality(tl.queue_path) > 1"
     if args.redo_fallback:
         sql += (" AND EXISTS (SELECT 1 FROM ticket_scopes s WHERE s.closed_ticket_id = t.id "
                 "AND s.fallback_reason IS NOT NULL)")
@@ -58,10 +101,16 @@ def cmd_run(args: argparse.Namespace) -> None:
         sql += " AND NOT EXISTS (SELECT 1 FROM ticket_scopes s WHERE s.closed_ticket_id = t.id)"
     sql += " ORDER BY t.otrs_closed_at DESC NULLS LAST"
     params: tuple = ()
-    if args.limit:
+    if args.limit and not args.per_team:
         sql += " LIMIT %s"
         params = (args.limit,)
-    rows = postgres.query(sql, params)
+    rows = _best(args) if args.best else postgres.query(sql, params)
+    if args.best and args.show_pick:
+        return
+    if args.per_team:
+        rows = _per_team(rows, args.per_team)
+        if args.limit:
+            rows = rows[:args.limit]
     print(f"{len(rows)} tickets to extract\n")
 
     done = failed = fell_back = 0
@@ -144,7 +193,16 @@ def main() -> None:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--try", dest="try_", metavar="TICKET")
     ap.add_argument("--limit", type=int)
+    ap.add_argument("--moved-only", action="store_true",
+                    help="only tickets the records show moving between queues")
+    ap.add_argument("--per-team", type=int, metavar="N",
+                    help="up to N of each team's most recent tickets")
     ap.add_argument("--redo", action="store_true")
+    ap.add_argument("--best", type=int, metavar="N",
+                    help="the N tickets worth the most (support_agent/history/pick.py)")
+    ap.add_argument("--since", metavar="DATE", help="with --best: closed on or after, 2025-01-01")
+    ap.add_argument("--show-pick", action="store_true",
+                    help="with --best: show what would be picked, call no model")
     ap.add_argument("--redo-fallback", action="store_true")
     ap.add_argument("--pause", type=float, default=5.0)
     ap.add_argument("--stats", action="store_true")

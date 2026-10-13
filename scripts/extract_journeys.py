@@ -5,6 +5,9 @@
     python scripts/extract_journeys.py --try 2026061482000903      # one ticket through the model; prints, stores nothing
     python scripts/extract_journeys.py --limit 20                  # a batch, stored
     python scripts/extract_journeys.py --moved-only                # only tickets whose path changed queue
+    python scripts/extract_journeys.py --per-queue 150             # up to 150 most recent per closing queue
+    python scripts/extract_journeys.py --best 2500 --since 2025-01-01 --show-pick   # which 2500 are worth most; no model call
+    python scripts/extract_journeys.py --best 2500 --since 2025-01-01               # those, stored (support_agent/history/pick.py)
     python scripts/extract_journeys.py                             # everything not done yet
     python scripts/extract_journeys.py --redo --limit 20           # again, even if done
     python scripts/extract_journeys.py --redo-fallback             # the fallback's journeys, again with the main model
@@ -71,9 +74,28 @@ def cmd_try(number: str) -> None:
     print(f"{meta['latency_ms'] / 1000:.1f}s, {meta['input_chars']:,} characters in. Nothing stored.")
 
 
+def _best(args: argparse.Namespace) -> list[dict]:
+    """The --best N tickets (history/pick.py), those not done yet unless --redo."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from support_agent.history import pick
+
+    since = (datetime.strptime(args.since, "%Y-%m-%d").replace(tzinfo=ZoneInfo("Asia/Riyadh"))
+             if args.since else None)
+    chosen, summary = pick.best(args.best, since)
+    pick.print_summary(summary)
+    if args.show_pick:
+        return []
+    if not args.redo:
+        done = {r["id"] for r in postgres.query("SELECT DISTINCT closed_ticket_id AS id FROM ticket_journeys")}
+        chosen = [r for r in chosen if r["id"] not in done]
+    return chosen[:args.limit] if args.limit else chosen
+
+
 def cmd_run(args: argparse.Namespace) -> None:
     sql = """
-        SELECT t.id, t.ticket_number FROM ticket_timelines tl
+        SELECT t.id, t.ticket_number, t.queue FROM ticket_timelines tl
         JOIN closed_tickets t ON t.id = tl.closed_ticket_id
         LEFT JOIN ticket_journeys j ON j.closed_ticket_id = t.id
         WHERE jsonb_array_length(tl.entries) > 0
@@ -86,10 +108,25 @@ def cmd_run(args: argparse.Namespace) -> None:
         sql += " AND cardinality(tl.queue_path) > 1"
     sql += " ORDER BY t.otrs_closed_at DESC NULLS LAST"
     params: tuple = ()
-    if args.limit:
+    if args.limit and not args.per_queue:
         sql += " LIMIT %s"
         params = (args.limit,)
-    rows = postgres.query(sql, params)
+    rows = _best(args) if args.best else postgres.query(sql, params)
+    if args.best and args.show_pick:
+        return
+    if args.per_queue:
+        # Up to N of each closing queue's most recent; junk has nothing to tell.
+        seen: dict[str, int] = {}
+        kept = []
+        for r in rows:
+            q = r["queue"] or ""
+            if "junk" in q.lower() or seen.get(q, 0) >= args.per_queue:
+                continue
+            seen[q] = seen.get(q, 0) + 1
+            kept.append(r)
+        for q, n in sorted(seen.items()):
+            print(f"  {q:40} {n} tickets")
+        rows = kept[:args.limit] if args.limit else kept
     print(f"{len(rows)} tickets to extract\n")
 
     done = failed = fell_back = 0
@@ -183,7 +220,14 @@ def main() -> None:
     ap.add_argument("--try", dest="try_", metavar="TICKET")
     ap.add_argument("--limit", type=int)
     ap.add_argument("--redo", action="store_true")
+    ap.add_argument("--best", type=int, metavar="N",
+                    help="the N tickets worth the most (support_agent/history/pick.py)")
+    ap.add_argument("--since", metavar="DATE", help="with --best: closed on or after, 2025-01-01")
+    ap.add_argument("--show-pick", action="store_true",
+                    help="with --best: show what would be picked, call no model")
     ap.add_argument("--moved-only", action="store_true")
+    ap.add_argument("--per-queue", type=int, metavar="N",
+                    help="up to N of each closing queue's most recent tickets")
     ap.add_argument("--redo-fallback", action="store_true",
                     help="only the journeys the fallback model wrote, again")
     ap.add_argument("--pause", type=float, default=5.0,
