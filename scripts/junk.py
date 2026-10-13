@@ -448,6 +448,9 @@ def main() -> None:
     s = sub.add_parser("senders")
     s.add_argument("--limit", type=int, default=30)
     args = ap.parse_args()
+    if args.cmd in ("build", "sync", "dedupe") and not get_settings().junk_sync:
+        sys.exit(f"JUNK_SYNC=false: the junk index ({junk.tenant()}) is kept up to date "
+                 "by another product. Run this there.")
     try:
         {"status": cmd_status, "build": cmd_build, "sync": cmd_sync, "dedupe": cmd_dedupe, "calibrate": cmd_calibrate,
          "check": cmd_check, "senders": cmd_senders, "roc": cmd_roc}[args.cmd](args)

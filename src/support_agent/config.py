@@ -69,6 +69,11 @@ class Settings(BaseSettings):
     """The similar-tickets index in Qdrant."""
     junk_tenant: str = "ole5-junk"
     """The junk index in Qdrant."""
+    junk_sync: bool = True
+    """False where another product keeps the junk index up to date: junk is
+    the same for every product (one Junk queue), so a second product points
+    JUNK_TENANT at the first one's index and only reads it. Its weekly run
+    then leaves the index alone, and scripts/junk.py will not change it."""
     fallback_service: str = "OLE5 / Ole5 New"
     fallback_queue: str = "Ole5 New::Product Support"
     fallback_sla: str = "SLA - Low (Ole5 + Ole5 New + Availo)"
@@ -380,6 +385,8 @@ class Settings(BaseSettings):
                          "precedent_tenant", "junk_tenant", "fallback_service",
                          "fallback_queue", "fallback_sla", "queue_prefix",
                          "subtype_prefix", "session_cookie"):
+                if name == "junk_tenant" and not self.junk_sync:
+                    continue    # shared on purpose
                 if getattr(self, name) == ole5[name].default:
                     w.append(f"PRODUCT={self.product} but {name.upper()} is still OLE5's value")
         if not self.prompts_dir.is_dir():

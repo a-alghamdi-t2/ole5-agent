@@ -249,6 +249,10 @@ def sync_indexes(added: list[dict]) -> dict:
     except Exception as exc:
         out["similar_error"] = f"{type(exc).__name__}: {exc}"[:300]
         log.exception("weekly: similar index sync failed")
+    if not get_settings().junk_sync:
+        # Another product keeps the shared junk index; this one only reads it.
+        out["junk_shared"] = junk.tenant()
+        return out
     try:
         # The week's Junk tickets are checked first: repeats of junk already
         # learned are not learned again.
@@ -492,6 +496,8 @@ def render(start: datetime, end: datetime, history: dict, indexes: dict, g: dict
         w(f"   Junk checked: {jc['checked']} -- kept {jc['kept']}, repeats {jc['repeat']}")
     if "junk" in indexes:
         synced("Junk index", indexes["junk"])
+    if "junk_shared" in indexes:
+        w(f"   Junk index: shared ({indexes['junk_shared']}), kept up to date by the other product")
     w(f"   History now holds {g['sizes']['real']} real and {g['sizes']['junk']} junk tickets.")
     w("")
 

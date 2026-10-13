@@ -36,6 +36,13 @@ log = get_logger(__name__)
 def tenant() -> str:
     """The index name, from JUNK_TENANT."""
     return get_settings().junk_tenant
+
+
+def _owned() -> None:
+    """Only the product that keeps the shared index may change it."""
+    if not get_settings().junk_sync:
+        raise RuntimeError(f"JUNK_SYNC=false: the junk index ({tenant()}) is kept "
+                           "up to date by another product; this one only reads it")
 DOC_ID = "junk-tickets"
 
 # Two definitions, for two jobs. Written without a % so they can sit in a
@@ -105,6 +112,7 @@ def wanted() -> dict[str, dict]:
 def sync(refresh: set[str] | None = None) -> dict:
     """Add the kept tickets missing from the index, remove repeats (and
     anything else that should not be there), re-add `refresh`. No rebuild."""
+    _owned()
     from support_agent.history import index_sync
 
     return index_sync.sync(tenant(), DOC_ID, wanted(), refresh)
@@ -120,6 +128,7 @@ def compare() -> dict:
 def build_index() -> int:
     """Rebuild the whole junk index. Only needed when every entry's text
     changes at once; otherwise sync() keeps it current."""
+    _owned()
     from support_agent.history import index_sync
 
     data = list(wanted().values())
