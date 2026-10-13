@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from support_agent.config import get_settings
+from support_agent.config import env_settings
 from support_agent.logging import get_logger
 
 log = get_logger(__name__)
@@ -15,7 +15,7 @@ def apply() -> int:
     """Applies all outstanding migrations and returns the total number of migrations executed."""
     from yoyo import get_backend, read_migrations
 
-    s = get_settings()
+    s = env_settings()
     migrations = read_migrations(str(s.migrations_dir))
     if not migrations:
         log.warning("no migrations found", extra={"dir": str(s.migrations_dir)})

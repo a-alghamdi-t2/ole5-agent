@@ -23,11 +23,13 @@ const RTL = /[؀-ۿ]/;
 // only decides what the page shows.
 function can(p) {
   const r = state.reviewer || {};
+  if (p === "super") return !!r.is_super;
   return !!r.is_admin || (p !== "admin" && (r.permissions || []).includes(p));
 }
 const TAB_NEEDS = {
   review: ["review"], knowledge: ["knowledge", "team_scopes", "urgent"],
   dashboard: ["dashboard"], tables: ["tables"], config: ["configuration"], users: ["admin"],
+  settings: ["super"],
 };
 const KTAB_NEEDS = { kb: "knowledge", scopes: "team_scopes", keywords: "urgent" };
 
@@ -469,6 +471,7 @@ async function refresh() {
     else if (state.tab === "tables") await loadTableIndex();
     else if (state.tab === "config") await loadConfig();
     else if (state.tab === "users") await loadUsers();
+    else if (state.tab === "settings" && !Object.keys(settingsEdits).length) await loadSettings();
   } finally {
     if (tab) tab.classList.remove("refreshing");
   }
@@ -1331,7 +1334,8 @@ async function loadUsers() {
     const me = u.id === state.reviewer.id;
     const tr = el("tr", u.is_active ? "" : "inactive");
     const who = el("td", "who-cell");
-    who.append(el("div", "name", (u.display_name || u.email) + (me ? " (you)" : "")),
+    who.append(el("div", "name", (u.display_name || u.email) + (me ? " (you)" : "")
+                  + (u.is_super ? " · super admin" : "")),
                el("div", "sub", u.email),
                el("div", "sub " + (u.online ? "online" : ""),
                   u.online ? "Online now" : u.last_seen ? "Last seen " + fmtTime(u.last_seen) : "Never signed in"));
@@ -1357,15 +1361,144 @@ async function loadUsers() {
         u.is_admin ? "An admin can do everything" : label,
         (on) => save({ permissions: on ? [...u.permissions, key] : u.permissions.filter((p) => p !== key) })));
     }
-    tr.append(cell(u.is_admin, me, me ? "You cannot remove your own admin" : "Can do everything, including this page",
+    const fixed = u.is_super ? "A super admin, set in the server's .env" : null;
+    tr.append(cell(u.is_admin, me || u.is_super,
+                  fixed || (me ? "You cannot remove your own admin" : "Can do everything, including this page"),
                   (on) => save({ is_admin: on })));
-    tr.append(cell(u.is_active, me, me ? "You cannot switch off your own account" : "Off: cannot sign in",
+    tr.append(cell(u.is_active, me || u.is_super,
+                  fixed || (me ? "You cannot switch off your own account" : "Off: cannot sign in"),
                   (on) => save({ is_active: on })));
     body.append(tr);
   }
   table.append(body);
   box.replaceChildren(table);
 }
+
+// ---------------------------------------------------------------- settings
+//
+// Super admins only. Changes are collected and saved together, so a set that
+// belongs together (a new OTRS address and its password) is checked as one.
+
+let settingsEdits = {};        // key -> new value, or null for "use .env"
+let settingsData = null;
+
+const SOURCE_LABEL = { page: "set here", ".env": "from .env", default: "default" };
+
+function settingsCount() {
+  const n = Object.keys(settingsEdits).length;
+  $("settings-bar").hidden = !n;
+  $("settings-count").textContent = n === 1 ? "1 unsaved change" : `${n} unsaved changes`;
+}
+
+function settingInput(f) {
+  const edited = f.key in settingsEdits;
+  const value = edited ? settingsEdits[f.key] : f.value;
+  let input;
+  if (f.kind === "bool") {
+    input = el("input"); input.type = "checkbox";
+    input.checked = edited && value === null ? !!f.value : !!value;
+    input.addEventListener("change", () => {
+      if (input.checked === !!f.value) delete settingsEdits[f.key];
+      else settingsEdits[f.key] = input.checked;
+      settingsCount();
+    });
+    const wrap = el("label", "set-switch");
+    wrap.append(input, el("span", null, input.checked ? "On" : "Off"));
+    input.addEventListener("change", () => { wrap.lastChild.textContent = input.checked ? "On" : "Off"; });
+    return wrap;
+  }
+  if (f.kind === "list" || f.kind === "pairs") {
+    input = el("textarea"); input.rows = 2; input.dir = "auto";
+    input.value = (value || "").split(",").map((x) => x.trim()).filter(Boolean).join("\n");
+    input.placeholder = "One per line";
+  } else {
+    input = el("input");
+    input.type = f.kind === "secret" ? "password" : (f.kind === "int" || f.kind === "float") ? "number" : "text";
+    if (f.kind === "float") input.step = "any";
+    if (f.kind === "secret") {
+      input.autocomplete = "new-password";
+      input.placeholder = f.unreadable ? "Saved, but cannot be read: enter it again"
+        : f.is_set ? "Set. Type a new one to replace it" : "Not set";
+      input.value = edited && value ? value : "";
+    } else {
+      input.value = value == null ? "" : String(value);
+      input.dir = "auto";
+    }
+  }
+  const original = f.kind === "secret" ? "" :
+    (f.kind === "list" || f.kind === "pairs") ? input.value : (f.value == null ? "" : String(f.value));
+  input.addEventListener("input", () => {
+    const now = (f.kind === "list" || f.kind === "pairs")
+      ? input.value.split("\n").map((x) => x.trim()).filter(Boolean).join(",") : input.value;
+    if (input.value === original) delete settingsEdits[f.key];
+    else settingsEdits[f.key] = now;
+    settingsCount();
+  });
+  return input;
+}
+
+function paintSettings() {
+  const box = $("settings");
+  box.replaceChildren();
+  const d = settingsData;
+  for (const group of d.groups) {
+    const section = el("section", "set-group");
+    section.append(el("h2", null, group));
+    for (const f of d.fields.filter((x) => x.group === group)) {
+      const row = el("div", "set-row" + (f.key in settingsEdits ? " changed" : ""));
+      const left = el("div", "set-label");
+      left.append(el("div", "name", f.label));
+      if (f.help) left.append(el("div", "help", f.help));
+      const meta = el("div", "meta");
+      const reset = f.key in settingsEdits && settingsEdits[f.key] === null;
+      meta.append(el("span", "src " + (reset ? "env" : f.source.replace(".", "")),
+                     reset ? "will use .env" : SOURCE_LABEL[f.source]));
+      if (f.source === "page" && f.updated_by) {
+        meta.append(el("span", null, `by ${f.updated_by}, ${fmtTime(f.updated_at)}`));
+      }
+      left.append(meta);
+      const right = el("div", "set-input");
+      right.append(settingInput(f));
+      if (f.source === "page" && !reset) {
+        const back = el("button", "btn ghost small", "Use .env");
+        back.title = f.env_set ? "Go back to the value in the server's .env" : "Go back to the default";
+        back.addEventListener("click", () => { settingsEdits[f.key] = null; settingsCount(); paintSettings(); });
+        right.append(back);
+      }
+      row.append(left, right);
+      section.append(row);
+    }
+    box.append(section);
+  }
+  const note = el("p", "set-note",
+    "Set only in the server's .env: " + d.env_only.join(", ") + ".");
+  box.append(note);
+  settingsCount();
+}
+
+async function loadSettings() {
+  settingsData = await api("/api/settings");
+  settingsEdits = {};
+  paintSettings();
+}
+
+$("settings-discard").addEventListener("click", () => { settingsEdits = {}; paintSettings(); });
+$("settings-save").addEventListener("click", async () => {
+  const risky = settingsData.fields.filter((f) => f.danger && f.key in settingsEdits
+    && settingsEdits[f.key] === false);
+  for (const f of risky) {
+    if (!confirm(f.danger + "\n\nSave anyway?")) return;
+  }
+  try {
+    settingsData = await api("/api/settings", { method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ changes: settingsEdits }) });
+    settingsEdits = {};
+    paintSettings();
+    loadHealth();
+    toast("Saved", "good");
+  } catch (err) { toast(err.message, "bad"); }
+});
 
 // ---------------------------------------------------------------- knowledge
 
@@ -2662,15 +2795,21 @@ $("theme-toggle").addEventListener("click", () => {
 paintThemeToggle();
 paintSoundToggle();
 
+// The dry-run badge and the product's names; again after the Settings page
+// saves, since it can change them.
+async function loadHealth() {
+  const health = await api("/api/health");
+  $("dry-run").hidden = !health.dry_run;
+  if (health.product) state.product = health.product;
+}
+
 async function start() {
   $("gate").hidden = true;
   $("shell").hidden = false;
   $("who").textContent = state.reviewer.display_name || state.reviewer.email;
 
   state.options = await api("/api/options");
-  const health = await api("/api/health");
-  $("dry-run").hidden = !health.dry_run;
-  if (health.product) state.product = health.product;
+  await loadHealth();
 
   const first = applyPermissions();
   if (first) switchTo(first);

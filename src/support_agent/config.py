@@ -8,11 +8,21 @@ Two kinds of field below. The first block mirrors .env one for one. The second
 holds values code reads but nobody sets per environment; adding the variable to
 .env overrides any of them.
 
-This module does not talk to the network. It only describes how to.
+Most of these can also be set on the console's Settings page, which only a
+super admin (SUPER_ADMIN_EMAILS) sees. A value saved there is kept in the
+database and wins over .env; what the page cannot change -- the database, the
+session secret, the super admins themselves -- stays in .env. get_settings()
+returns the merged result; env_settings() returns .env alone, for what must be
+known before the database can be read. See support_agent.settings_store.
+
+This module does not talk to the network itself. It only describes how to.
 """
 
 from __future__ import annotations
 
+import logging
+import threading
+import time
 from datetime import date
 
 from enum import Enum
@@ -215,6 +225,11 @@ class Settings(BaseSettings):
 
     # ---- web -----------------------------------------------------------
     session_secret: SecretStr | None = None
+    super_admin_emails: str | None = None
+    """Comma-separated. These accounts are always admins, cannot be demoted or
+    switched off from the console, and are the only ones who see the Settings
+    page. The one setting about people that lives in .env: nobody can take it
+    away from the console."""
 
     # ---- behaviour -----------------------------------------------------
     dry_run: bool = True
@@ -299,6 +314,11 @@ class Settings(BaseSettings):
     @property
     def history_queue_list(self) -> list[str]:
         return [q.strip() for q in (self.history_queues or "").split(",") if q.strip()]
+
+    @property
+    def super_admin_list(self) -> list[str]:
+        return [e.strip().lower() for e in (self.super_admin_emails or "").split(",")
+                if e.strip()]
 
     @property
     def own_service_list(self) -> list[str]:
@@ -404,8 +424,10 @@ class ConfigError(RuntimeError):
 
 
 @lru_cache(maxsize=1)
-def get_settings() -> Settings:
-    """Load once, reuse. Raises ConfigError with a readable list of problems."""
+def env_settings() -> Settings:
+    """.env and the environment alone, loaded once. For what has to be known
+    before the database can be read -- the database itself above all. Raises
+    ConfigError with a readable list of problems."""
     try:
         return Settings()  # type: ignore[call-arg]
     except ValidationError as exc:
@@ -417,3 +439,55 @@ def get_settings() -> Settings:
             f"Configuration is incomplete.\n{problems}\n\n"
             f"Expected a .env file at: {REPO_ROOT / '.env'}"
         ) from None
+
+
+# ---------------------------------------------------------------------------
+# .env with the Settings page on top
+# ---------------------------------------------------------------------------
+
+OVERLAY_SECONDS = 15.0
+"""How long the merged settings are reused before the database is read again.
+A save on the Settings page refreshes them at once in the process that saved;
+other processes (a script running alongside) see it within this long."""
+
+RETRY_AFTER_FAILURE = 60.0
+"""When the database could not be read, how long before trying again."""
+
+_overlay: dict = {"at": float("-inf"), "settings": None}
+_lock = threading.Lock()
+_loading = threading.local()
+
+
+def get_settings() -> Settings:
+    """The settings in force: .env, with whatever the Settings page saved on
+    top. Never raises for the database: when it cannot be read (not started,
+    table not there yet), the last good result is used, or .env alone."""
+    base = env_settings()
+    if getattr(_loading, "busy", False):
+        return base            # the database is being read for the overlay itself
+    now = time.monotonic()
+    cached = _overlay["settings"]
+    if cached is not None and now - _overlay["at"] < OVERLAY_SECONDS:
+        return cached
+    if not _lock.acquire(blocking=False):
+        return cached or base  # another thread is reading it right now
+    try:
+        _loading.busy = True
+        from support_agent import settings_store
+        merged = settings_store.apply(base)
+    except Exception as exc:
+        logging.getLogger(__name__).warning(
+            "settings page values not read (%s); using %s", str(exc).splitlines()[0][:160],
+            "the last ones" if cached else ".env")
+        merged = cached or base
+        now += RETRY_AFTER_FAILURE - OVERLAY_SECONDS   # not again for a minute
+    finally:
+        _loading.busy = False
+        _lock.release()
+    _overlay.update(at=now, settings=merged)
+    return merged
+
+
+def refresh_settings() -> None:
+    """Read the Settings page values again on the next get_settings()."""
+    _overlay["at"] = float("-inf")

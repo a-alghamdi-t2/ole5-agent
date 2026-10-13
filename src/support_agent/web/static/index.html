@@ -60,6 +60,7 @@
     <button class="tab" data-tab="config"><span class="idx">05</span> Configuration</button>
     <button class="tab" data-tab="users" hidden><span class="idx">06</span> Users</button>
     <button class="tab" data-tab="testing" id="testing-tab" hidden><span class="idx">07</span> Testing</button><!-- testing page -->
+    <button class="tab" data-tab="settings" hidden><span class="idx">08</span> Settings</button>
 
     <div class="rail-foot">
       <div class="who" id="who"></div>
@@ -207,6 +208,20 @@
         <p>Who can do what. Tick a box to give someone a permission; it applies on their next click. An admin can do everything, including this page.</p>
       </header>
       <div class="users-wrap" id="users"></div>
+    </section>
+
+    <!-- ============================================== 08 · settings (super admins) -->
+    <section class="page" id="page-settings" hidden>
+      <header>
+        <h1>Settings</h1>
+        <p>How this console runs. Only super admins see this page. A value saved here wins over the server's .env; "Use .env" goes back to it. Passwords and keys can be replaced, never read. Every change is in the audit log.</p>
+      </header>
+      <div id="settings"></div>
+      <div class="settings-bar" id="settings-bar" hidden>
+        <span id="settings-count"></span>
+        <button class="btn ghost" id="settings-discard">Discard</button>
+        <button class="btn approve" id="settings-save">Save</button>
+      </div>
     </section>
 
     <!-- no permissions at all -->

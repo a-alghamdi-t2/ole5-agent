@@ -11,7 +11,7 @@ from typing import Any, Iterator, Sequence
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
-from support_agent.config import get_settings
+from support_agent.config import env_settings
 from support_agent.logging import get_logger
 
 log = get_logger(__name__)
@@ -26,7 +26,8 @@ def get_pool() -> ConnectionPool:
        causing the first connection after a pause to be slow."""
     global _pool
     if _pool is None:
-        settings = get_settings()
+        # .env alone: the Settings page's values are read through this pool.
+        settings = env_settings()
         _pool = ConnectionPool(
             conninfo=settings.db_dsn,
             min_size=1,

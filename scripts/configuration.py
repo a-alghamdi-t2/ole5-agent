@@ -135,10 +135,13 @@ def main() -> None:
     p.add_argument("file", type=Path)
     p.add_argument("--yes", action="store_true", help="replace without asking")
     args = ap.parse_args()
-    if args.cmd == "export":
-        export(args.file)
-    else:
-        load(args.file, args.yes)
+    try:
+        if args.cmd == "export":
+            export(args.file)
+        else:
+            load(args.file, args.yes)
+    finally:
+        postgres.close_pool()
 
 
 if __name__ == "__main__":

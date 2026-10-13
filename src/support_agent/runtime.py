@@ -5,6 +5,11 @@ run on a worker thread -- deciding a ticket is a minute of model time and must
 not touch the event loop -- and both survive their own failures, because a
 knowledge base that is down for ten minutes should not stop the console.
 
+All three are always started, and each pass reads its switch first
+(POLLER_ENABLED, OUTBOX_ENABLED, WEEKLY_ENABLED, which the Settings page can
+change): turned off, a pass does nothing; turned back on, the next pass works.
+No restart either way.
+
 Neither loop is safe to run twice. One poll deciding a ticket while another
 decides the same one wastes model time and races on the one-pending-draft
 index. That is why the server runs a single worker, and why --reload is for
@@ -66,6 +71,9 @@ async def _loop(state: LoopState, work: Callable[[], dict[str, Any]]) -> None:
             started = datetime.now(UTC)
             try:
                 result = await run_in_threadpool(work)
+                if result.get("off"):        # switched off: nothing ran
+                    await asyncio.sleep(state.interval)
+                    continue
                 state.last_error = None
                 state.last_result = result
             except asyncio.CancelledError:
@@ -81,9 +89,27 @@ async def _loop(state: LoopState, work: Callable[[], dict[str, Any]]) -> None:
         raise
 
 
+def _switch(name: str, on: bool, interval: float | None = None,
+            why: str = "switched off") -> dict[str, Any] | None:
+    """Read before each pass: whether the loop is on, and how often it runs."""
+    state = STATE[name]
+    if interval:
+        state.interval = interval
+    if on != state.enabled:
+        log.info("loop " + ("on" if on else "off"), extra={"loop": name})
+    state.enabled = on
+    return None if on else {"off": why}
+
+
 def _poll_once() -> dict[str, Any]:
     from support_agent.intake.poller import poll_once
 
+    s = get_settings()
+    off = _switch("poller", s.poller_enabled and s.otrs_configured,
+                  float(s.otrs_poll_seconds),
+                  "switched off" if not s.poller_enabled else "OTRS is not configured")
+    if off:
+        return off
     result = poll_once()
     return {"seen": result.seen, "drafted": result.drafted,
             "skipped": result.skipped, "failed": result.failed,
@@ -93,6 +119,9 @@ def _poll_once() -> dict[str, Any]:
 def _send_once() -> dict[str, Any]:
     from support_agent.review import approve as review
 
+    off = _switch("outbox", get_settings().outbox_enabled)
+    if off:
+        return off
     sent, failed = review.send_pending()
     return {"sent": sent, "failed": failed}
 
@@ -100,6 +129,9 @@ def _send_once() -> dict[str, Any]:
 def _weekly_once() -> dict[str, Any]:
     from support_agent.history import weekly
 
+    off = _switch("weekly", get_settings().weekly_enabled)
+    if off:
+        return off
     return weekly.maybe_run()
 
 
@@ -109,31 +141,26 @@ WEEKLY_CHECK_SECONDS = 300.0
 
 
 def start() -> None:
-    """Start whichever loops are configured. Called once, from the lifespan."""
+    """Start the loops. Called once, from the lifespan. Each pass checks its
+    own switch, so a loop that is off now can be turned on later."""
     s = get_settings()
 
     poller = LoopState("poller", interval=float(s.otrs_poll_seconds))
     outbox = LoopState("outbox", interval=float(s.outbox_seconds))
+    # The weekly history update: Friday 04:00 Riyadh time. The loop only looks
+    # at the clock; the week's row in weekly_runs keeps it to one run a week.
     weekly = LoopState("weekly", interval=WEEKLY_CHECK_SECONDS)
     STATE["poller"] = poller
     STATE["outbox"] = outbox
     STATE["weekly"] = weekly
+    poller.enabled = s.poller_enabled and s.otrs_configured
+    outbox.enabled = s.outbox_enabled
+    weekly.enabled = s.weekly_enabled
+    if s.poller_enabled and not s.otrs_configured:
+        log.warning("poller waiting: OTRS is not configured")
 
-    if s.poller_enabled and s.otrs_configured:
-        poller.enabled = True
-        _TASKS.append(asyncio.create_task(_loop(poller, _poll_once), name="poller"))
-    elif s.poller_enabled:
-        log.warning("poller not started: OTRS is not configured")
-
-    if s.outbox_enabled:
-        outbox.enabled = True
-        _TASKS.append(asyncio.create_task(_loop(outbox, _send_once), name="outbox"))
-
-    # The weekly history update: Friday 04:00 Riyadh time. The loop only looks
-    # at the clock; the week's row in weekly_runs keeps it to one run a week.
-    if s.weekly_enabled:
-        weekly.enabled = True
-        _TASKS.append(asyncio.create_task(_loop(weekly, _weekly_once), name="weekly"))
+    for state, work in ((poller, _poll_once), (outbox, _send_once), (weekly, _weekly_once)):
+        _TASKS.append(asyncio.create_task(_loop(state, work), name=state.name))
 
 
 async def stop() -> None:
@@ -148,4 +175,4 @@ async def stop() -> None:
 
 
 def status() -> dict[str, Any]:
-    return {name: state.as_dict() for name, state in STATE.items()}
+    return {name: state.as_dict() for name, state in STATE.items()}

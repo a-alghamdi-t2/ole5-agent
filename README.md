@@ -138,22 +138,40 @@ docker compose up -d --force-recreate ole5
 
 Database changes in `migrations/` are applied by themselves when the app starts.
 
-## Important settings in .env
+## Settings: .env and the Settings page
+
+`.env` holds only what the app needs before it can open its database, or what
+nobody should be able to change from a browser. `.env.example` is the template
+for any product: copy it to `.env` and fill it in.
 
 | Setting | What it is |
 |---|---|
-| `OTRS_BASE_URL`, `OTRS_USER`, `OTRS_PASSWORD` | The OTRS the app reads new tickets from and writes approvals to |
-| `HISTORY_OTRS_*` | Optional. Where the weekly job reads closed tickets from, if it is a different OTRS |
-| `GROQ_API_KEY` | The key for the AI models |
-| `SMTP_*`, `MAIL_*` | The mail server for urgent emails and the weekly report |
-| `CONSOLE_URL` | The console's address. The emails link to it |
-| `REGISTRATION_ALLOWLIST` | Who can create an account, for example `@t2.sa`. A new account is only created after a 6-digit code emailed to the address is entered, so the mail settings must work for sign-up |
-| `WEEKLY_REPORT_RECIPIENTS` | Who gets the weekly report, separated by commas |
-| `DRY_RUN` | `true` means nothing is written to OTRS and no emails are sent |
-| `PIP_EXTRA_INDEX_URL` | Where the build downloads the private RAGent2 package from. Needed to build |
-| `PRODUCT` | Which folder under `products/` this copy uses. Unset means `ole5`. Every other product setting is listed in that product's README |
-| `OWN_SERVICES` | Only when two products read the same intake queue: the Service values that are this product's. See `products/README.md` |
-| `TESTING_PAGE` | `true` shows the Testing page, which sends a title and message to the Support queue as a new ticket. Staging only: it refuses when the app points at production OTRS |
+| `DATABASE_URL`, `POSTGRES_*` | The database |
+| `SESSION_SECRET` | Signs sign-in sessions and encrypts the passwords saved on the Settings page. Changing it signs everyone out and makes those passwords unreadable (the page then asks for them again) |
+| `SUPER_ADMIN_EMAILS` | Comma-separated. Always admins, cannot be demoted from the console, and the only people who see the Settings page |
+| `PRODUCT` | Which folder under `products/` this copy uses. Unset means `ole5` |
+| `SESSION_COOKIE`, `QDRANT_URL`, `DOCLING_URL`, `LOG_LEVEL` | Fixed per installation |
+| `PIP_EXTRA_INDEX_URL`, `COMPOSE_PROJECT_NAME`, the ports | For building and running with Docker |
+
+Everything else is on the **Settings** page (super admins only): the product
+name and queues, `OWN_SERVICES`, the fallbacks, the OTRS addresses and
+passwords, the AI key and models, the mail server, report recipients, who may
+sign up, the junk and similar-ticket thresholds, and the switches (dry run,
+picking up tickets, writing to OTRS, the Friday run, the Testing page).
+
+- A value saved on the page wins over `.env`. **Use .env** on a row goes back
+  to the `.env` value (or the default). A copy with nothing saved behaves
+  exactly as its `.env` says, so existing `.env` files keep working.
+- To move a copy that is already running onto the page, run
+  `python scripts/settings_from_env.py` (it lists what it would copy), then
+  with `--yes`. It saves every page setting set in `.env` onto the page with
+  the same value; then delete those lines from `.env`. It prints which ones.
+- Passwords and keys can be replaced on the page, never read: they are stored
+  encrypted and never sent to the browser.
+- Changes apply within seconds, without a restart, including the switches.
+- Everything is checked before it is saved (a fallback must be a locked value
+  on the Configuration page, thresholds between 0 and 1, and so on), and every
+  change is in the audit log with who made it.
 
 ## Who can do what
 
@@ -163,9 +181,11 @@ and Testing. A new account starts with Review and Tables. An admin can do
 everything, including the Users page. The server checks every request, so a
 missing permission is refused even if someone calls the API directly.
 
-There is always at least one admin: an admin cannot remove their own admin or
-switch off their own account, and in a new database the first person to sign
-up becomes the admin.
+The super admins in `SUPER_ADMIN_EMAILS` are always admins and cannot be
+changed on the Users page. An admin cannot remove their own admin or switch
+off their own account, and there is always at least one admin. Without
+`SUPER_ADMIN_EMAILS`, the first person to sign up in a new database becomes the
+admin.
 
 ## Useful scripts
 

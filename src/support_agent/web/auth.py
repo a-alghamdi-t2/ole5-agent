@@ -27,6 +27,12 @@ def cookie_name() -> str:
     """SESSION_COOKIE: two products on one host need different ones."""
     return get_settings().session_cookie
 
+
+def is_super(email: str | None) -> bool:
+    """SUPER_ADMIN_EMAILS in .env: always admins, and the only ones who see
+    the Settings page. Set in .env so nobody can take it away in the console."""
+    return bool(email) and email.strip().lower() in get_settings().super_admin_list
+
 class AuthError(RuntimeError):
     pass
 
@@ -344,9 +350,11 @@ def reviewer_for(token: str | None) -> dict | None:
         "UPDATE reviewers SET last_seen_at = now() WHERE id = %s "
         "AND (last_seen_at IS NULL OR last_seen_at < now() - interval '1 minute')",
         (row["id"],))
+    sup = is_super(row["email"])
     return {"id": row["id"], "email": row["email"],
             "display_name": row["display_name"],
-            "is_admin": bool(row["is_admin"]),
+            "is_admin": bool(row["is_admin"]) or sup,
+            "is_super": sup,
             "permissions": granted(row)}
 
 
@@ -386,7 +394,7 @@ DEFAULT_PERMISSIONS = ("review", "tables")
 
 def granted(row: dict) -> list[str]:
     """What a reviewer may do, in a fixed order. An admin may do everything."""
-    if row.get("is_admin"):
+    if row.get("is_admin") or is_super(row.get("email")):
         return list(PERMISSIONS)
     have = set(row.get("permissions") or [])
     return [p for p in PERMISSIONS if p in have]
@@ -394,12 +402,16 @@ def granted(row: dict) -> list[str]:
 
 def need(permission: str):
     """FastAPI dependency: signed in, and allowed to do this. 403 otherwise."""
-    label = PERMISSIONS[permission] if permission in PERMISSIONS else permission
+    label = PERMISSIONS.get(permission) or {"super": "super admin"}.get(permission, permission)
 
     def dependency(request: Request) -> dict:
         reviewer = require(request)
-        allowed = reviewer["is_admin"] if permission == "admin" \
-            else permission in reviewer["permissions"]
+        if permission == "super":
+            allowed = reviewer.get("is_super", False)
+        elif permission == "admin":
+            allowed = reviewer["is_admin"]
+        else:
+            allowed = permission in reviewer["permissions"]
         if not allowed:
             raise HTTPException(status_code=403,
                                 detail=f"you do not have the {label} permission; ask an admin")
@@ -411,6 +423,8 @@ def need(permission: str):
 def _admin_if_none(reviewer_id: int) -> None:
     """The first account in a database without an admin becomes its admin, so
     a new console can always be set up by whoever signs up first."""
+    if get_settings().super_admin_list:
+        return          # the super admins in .env are the console's admins
     postgres.execute(
         "UPDATE reviewers SET is_admin = true WHERE id = %s "
         "AND NOT EXISTS (SELECT 1 FROM reviewers WHERE is_admin AND is_active)",
@@ -432,6 +446,8 @@ def list_users() -> list[dict]:
         """
     )
     for r in rows:
+        r["is_super"] = is_super(r["email"])
+        r["is_admin"] = bool(r["is_admin"]) or r["is_super"]
         r["permissions"] = granted(r)
     return rows
 
@@ -460,6 +476,10 @@ def update_user(admin: dict, reviewer_id: int, changes: dict) -> dict:
         if flag in changes:
             sets[flag] = bool(changes[flag])
 
+    if is_super(row["email"]) and (sets.get("is_admin") is False
+                                   or sets.get("is_active") is False):
+        raise AuthError(f"{row['email']} is a super admin, set in .env (SUPER_ADMIN_EMAILS); "
+                        "it cannot be changed here")
     me = reviewer_id == admin["id"]
     if me and sets.get("is_admin") is False:
         raise AuthError("you cannot remove your own admin; another admin can")
@@ -469,8 +489,9 @@ def update_user(admin: dict, reviewer_id: int, changes: dict) -> dict:
         sets.get("is_admin") is False or sets.get("is_active") is False)
     if losing_admin:
         others = postgres.query_one(
-            "SELECT count(*) AS n FROM reviewers WHERE is_admin AND is_active AND id <> %s",
-            (reviewer_id,))["n"]
+            "SELECT count(*) AS n FROM reviewers WHERE is_active AND id <> %s "
+            "AND (is_admin OR lower(email) = ANY(%s))",
+            (reviewer_id, get_settings().super_admin_list))["n"]
         if not others:
             raise AuthError("there must always be at least one admin")
     if not sets:

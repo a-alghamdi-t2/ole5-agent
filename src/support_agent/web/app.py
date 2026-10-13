@@ -253,6 +253,29 @@ async def update_user(reviewer_id: int, payload: dict,
             "permissions": auth.granted(row)}
 
 
+@app.get("/api/settings")
+async def settings_page(_: dict = Depends(auth.need("super"))) -> dict:
+    """The Settings page: super admins only (SUPER_ADMIN_EMAILS). Never a
+    password's value."""
+    from support_agent import settings_store
+    return queries.jsonable_row(await run_in_threadpool(settings_store.describe))
+
+
+@app.put("/api/settings")
+async def save_settings(payload: dict, who: dict = Depends(auth.need("super"))) -> dict:
+    """{"changes": {key: value, or null for "use .env"}}. All checked first;
+    nothing is saved if anything is wrong."""
+    from support_agent import settings_store
+    changes = payload.get("changes") or {}
+    if not isinstance(changes, dict):
+        raise HTTPException(status_code=400, detail="changes must be an object")
+    try:
+        out = await run_in_threadpool(settings_store.save, changes, who["email"])
+    except settings_store.SettingsError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return queries.jsonable_row(out)
+
+
 @app.get("/api/options")
 async def options(_: dict = Depends(auth.require)) -> dict:
     """The values OTRS will accept. Dropdowns, not free text.
