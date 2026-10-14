@@ -24,32 +24,32 @@
     "queue": [
       {
         "value": "RiCH::Product Support",
-        "description": "Help using RiCH as it works today: questions, delivery status checks, sender names, reports and routine requests. To be refined from the team scopes.",
+        "description": "Help using RiCH as it works today: sender name registration and renewal (documents, submission to the network providers), delivery checks with the operators (Sent but not Delivered, OTP delays), explaining blacklist/whitelist channels, message parts and throttling, and reports from the portal. The first line for questions.",
         "locked": true
       },
       {
         "value": "RiCH::Operation",
-        "description": "Work that needs access to the platform, the customer's account or the operators: delivery failures, whitelisting, carrier and operator issues, account changes at the backend. To be refined from the team scopes.",
+        "description": "Changes in the platform or the customer's account: whitelisting IPs and users, creating or changing accounts and API/SMPP/email-to-SMS access, adding or moving balance already approved, template approval, configuration, backend report extractions, operator incidents and rerouting traffic.",
         "locked": true
       },
       {
         "value": "RiCH::Operation Long Project",
-        "description": "Operation work that runs as a longer project rather than a single request. To be refined from the team scopes.",
+        "description": "Long technical work over days or weeks: VPN and IPsec tunnels, dedicated links, disaster recovery drills, root cause and post-incident reports, archived SMS reports that must be decrypted.",
         "locked": true
       },
       {
         "value": "RiCH::Operation::Al Rajhi Bank",
-        "description": "Operation work for the Al Rajhi Bank account. To be refined from the team scopes.",
+        "description": "Every ticket from Al Rajhi Bank or a vendor acting for it, whatever the topic: OTP delays, operator incidents, MQ/ESB/SMPP connections, push notifications, DR exercises, notification lists, balance.",
         "locked": true
       },
       {
         "value": "RiCH::Product",
-        "description": "The product itself: defects, whether something is by design, new requirements and change requests. To be refined from the team scopes.",
+        "description": "The product itself: defects that need a code fix, new features and change requests, whether a behaviour is by design, API specifications and limits, security and compliance questionnaires (SAMA, NCA, penetration tests).",
         "locked": true
       },
       {
         "value": "RiCH::Customer Success",
-        "description": "The relationship rather than the system: meetings, contracts, commercial and billing questions, complaints about the service. To be refined from the team scopes.",
+        "description": "The relationship and the money: contracts, buying balance and top-ups, refunds, Farabi requests before a whitelist or balance change, meetings, training, formal letters, complaints and escalations.",
         "locked": true
       },
       {
